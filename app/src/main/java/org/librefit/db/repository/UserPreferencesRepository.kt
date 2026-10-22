@@ -49,7 +49,6 @@ private val SHOW_WELCOME_SCREEN_KEY = booleanPreferencesKey("show_welcome_screen
 private val IS_SUPPORTER_KEY = booleanPreferencesKey("is_supporter")
 private val PAST_VERSION_CODE_KEY = longPreferencesKey("pastVersionCode")
 private val IS_WORKOUT_HEADER_STICKY_KEY = booleanPreferencesKey("is_workout_header_sticky")
-private val SHOW_KEEP_ANDROID_OPEN_KEY = booleanPreferencesKey("showKeepAndroidOpenKey")
 private val USE_SCROLL_WHEEL_FOR_INPUT_KEY = booleanPreferencesKey("use_number_picker")
 private val DISMISS_SCROLL_WHELL_INPUT_AUTOMATICALLY =
     booleanPreferencesKey("dismiss_input_modal_bottom_sheet_automatically_key")
@@ -148,14 +147,6 @@ class UserPreferencesRepository @Inject constructor(
 
     val isWorkoutHeaderSticky: StateFlow<Boolean> = dataStore.data
         .map { preferences -> preferences[IS_WORKOUT_HEADER_STICKY_KEY] != false }
-        .stateIn(
-            scope = applicationScope,
-            started = SharingStarted.Eagerly,
-            initialValue = true
-        )
-
-    val showKeepAndroidOpen: StateFlow<Boolean> = dataStore.data
-        .map { preferences -> preferences[SHOW_KEEP_ANDROID_OPEN_KEY] != false }
         .stateIn(
             scope = applicationScope,
             started = SharingStarted.Eagerly,
@@ -313,10 +304,6 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun saveIsWorkoutHeaderSticky(isSticky: Boolean) {
         dataStore.edit { preferences -> preferences[IS_WORKOUT_HEADER_STICKY_KEY] = isSticky }
-    }
-
-    suspend fun saveShowKeepAndroidOpen(show: Boolean) {
-        dataStore.edit { preferences -> preferences[SHOW_KEEP_ANDROID_OPEN_KEY] = show }
     }
 
     suspend fun saveUseScrollWheelForInput(useScroll: Boolean) {

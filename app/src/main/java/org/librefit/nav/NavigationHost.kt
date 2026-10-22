@@ -39,6 +39,7 @@ import org.librefit.ui.screens.calendar.CalendarScreen
 import org.librefit.ui.screens.editExercise.EditExerciseScreen
 import org.librefit.ui.screens.editWorkout.EditWorkoutScreen
 import org.librefit.ui.screens.exercises.ExercisesScreen
+import org.librefit.ui.screens.gzclp.GzclpScreen
 import org.librefit.ui.screens.infoExercise.InfoExerciseScreen
 import org.librefit.ui.screens.infoWorkout.InfoWorkoutScreen
 import org.librefit.ui.screens.measurements.MeasurementScreen
@@ -62,15 +63,12 @@ fun NavigationHost(
 
     val unitSystem by sharedViewModel.unitSystem.collectAsStateWithLifecycle()
 
-    val showWelcomeScreen by sharedViewModel.showWelcomeScreen.collectAsStateWithLifecycle()
 
     val requestPermissionNextTime by sharedViewModel.requestPermissionNextTime.collectAsStateWithLifecycle()
 
     val isSupporter by sharedViewModel.isSupporter.collectAsStateWithLifecycle()
 
-    val startDestination = remember {
-        if (showWelcomeScreen) Route.WelcomeScreen else Route.MainScreen
-    }
+    val startDestination = remember { Route.GzclpScreen }
 
     CompositionLocalProvider(LocalUnitSystem provides unitSystem) {
         SharedTransitionLayout {
@@ -137,8 +135,12 @@ fun NavigationHost(
                 composable<Route.MainScreen> {
                     MainScreen(
                         navController = navController,
-                        animatedVisibilityScope = this
+                        animatedVisibilityScope = this,
+                        startInLibrary = true
                     )
+                }
+                composable<Route.GzclpScreen> {
+                    GzclpScreen(navController = navController)
                 }
                 composable<Route.MeasurementScreen> {
                     MeasurementScreen(navigateBack = navController::navigateUp)

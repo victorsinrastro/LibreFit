@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.librefit.db.repository.UserPreferencesRepository
 import org.librefit.db.repository.WorkoutRepository
+import org.librefit.db.repository.GzclpRepository
 import org.librefit.ui.models.mappers.toEntity
 import org.librefit.ui.models.mappers.toUi
 import javax.inject.Inject
@@ -25,8 +26,24 @@ import javax.inject.Inject
 @HiltViewModel
 class HomeScreenViewModel @Inject constructor(
     private val userPreferences: UserPreferencesRepository,
-    private val workoutRepository: WorkoutRepository
+    private val workoutRepository: WorkoutRepository,
+    private val gzclpRepository: GzclpRepository
 ) : ViewModel() {
+    val gzclpProgram = gzclpRepository.program.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val gzclpTemplates = gzclpRepository.templates.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val gzclpProgress = gzclpRepository.progress.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val gzclpActive = gzclpRepository.activeSession.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val gzclpHistory = gzclpRepository.history.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    fun startGzclp(onReady: () -> Unit) {
+        viewModelScope.launch {
+            val current = gzclpProgram.value
+            if (current != null && gzclpActive.value == null) {
+                try { gzclpRepository.startSession(current.nextWorkoutIndex) }
+                catch (_: Exception) { /* The program screen explains pending resets and validation. */ }
+            }
+            onReady()
+        }
+    }
     val requestPermissionNextTime: StateFlow<Boolean> = userPreferences.requestPermissionsNextTime
 
     val routines = workoutRepository.routines
@@ -44,15 +61,6 @@ class HomeScreenViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = null
         )
-
-    val showKeepAndroidOpen = userPreferences.showKeepAndroidOpen
-
-    fun saveKeepOpenAndroidCheckbox(showAgain : Boolean) {
-        viewModelScope.launch {
-            userPreferences.saveShowKeepAndroidOpen(!showAgain)
-        }
-    }
-
 
     fun deleteRunningWorkout() {
         viewModelScope.launch {

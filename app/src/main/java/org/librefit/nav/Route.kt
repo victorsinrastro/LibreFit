@@ -56,6 +56,9 @@ sealed interface Route {
     data object MainScreen : Route
 
     @Serializable
+    data object GzclpScreen : Route
+
+    @Serializable
     data object MeasurementScreen : Route
 
     @Serializable

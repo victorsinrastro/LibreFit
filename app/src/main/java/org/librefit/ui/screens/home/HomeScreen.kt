@@ -70,7 +70,6 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import kotlinx.collections.immutable.persistentListOf
 import org.librefit.R
-import org.librefit.enums.InfoMode
 import org.librefit.enums.pages.MainScreenPages
 import org.librefit.enums.userPreferences.ThemeMode
 import org.librefit.nav.Route
@@ -80,8 +79,16 @@ import org.librefit.ui.components.LibreFitButton
 import org.librefit.ui.components.LibreFitLazyColumn
 import org.librefit.ui.components.LibreFitScaffold
 import org.librefit.ui.components.dialogs.ConfirmDialog
-import org.librefit.ui.components.modalBottomSheets.InfoModalBottomSheet
 import org.librefit.ui.models.UiWorkout
+import org.librefit.db.entity.GzclpProgramEntity
+import org.librefit.db.entity.GzclpTemplateExerciseEntity
+import org.librefit.db.entity.GzclpProgressEntity
+import org.librefit.db.entity.GzclpSessionWithDetails
+import org.librefit.gzclp.domain.GzclpEngine
+import org.librefit.gzclp.domain.GzclpWeights
+import org.librefit.gzclp.domain.Stage
+import org.librefit.gzclp.domain.Tier
+import org.librefit.gzclp.domain.WeightUnit
 import org.librefit.ui.theme.LibreFitTheme
 import org.librefit.util.Formatter
 import kotlin.random.Random
@@ -125,22 +132,29 @@ fun SharedTransitionScope.HomeScreen(
         }
     }
 
-    val showKeepAndroidOpen by viewModel.showKeepAndroidOpen.collectAsStateWithLifecycle()
-
     val requestPermissionNextTime by viewModel.requestPermissionNextTime.collectAsStateWithLifecycle()
 
     val routines by viewModel.routines.collectAsStateWithLifecycle()
 
     val runningWorkout by viewModel.runningWorkout.collectAsStateWithLifecycle()
+    val gzclpProgram by viewModel.gzclpProgram.collectAsStateWithLifecycle()
+    val gzclpTemplates by viewModel.gzclpTemplates.collectAsStateWithLifecycle()
+    val gzclpProgress by viewModel.gzclpProgress.collectAsStateWithLifecycle()
+    val gzclpActive by viewModel.gzclpActive.collectAsStateWithLifecycle()
+    val gzclpHistory by viewModel.gzclpHistory.collectAsStateWithLifecycle()
 
     HomeScreenContent(
         navController = navController,
         runningWorkout = runningWorkout,
         routines = routines,
+        gzclpProgram = gzclpProgram,
+        gzclpTemplates = gzclpTemplates,
+        gzclpProgress = gzclpProgress,
+        gzclpActive = gzclpActive,
+        gzclpCompleted = gzclpHistory.count { it.status == "COMPLETED" },
+        startGzclp = viewModel::startGzclp,
         animatedVisibilityScope = animatedVisibilityScope,
         deleteRunningWorkout = viewModel::deleteRunningWorkout,
-        showKeepAndroidOpen = showKeepAndroidOpen,
-        onKeepAndroidOpenCheckboxChange = viewModel::saveKeepOpenAndroidCheckbox,
         navigateToRoutine = { workoutId ->
             val requestPermission = !hasNotificationPermission && requestPermissionNextTime
 
@@ -165,14 +179,19 @@ fun SharedTransitionScope.HomeScreen(
 private fun SharedTransitionScope.HomeScreenContent(
     navController: NavHostController,
     routines: List<UiWorkout>,
+    gzclpProgram: GzclpProgramEntity?,
+    gzclpTemplates: List<GzclpTemplateExerciseEntity>,
+    gzclpProgress: List<GzclpProgressEntity>,
+    gzclpActive: GzclpSessionWithDetails?,
+    gzclpCompleted: Int,
+    startGzclp: (() -> Unit) -> Unit,
     runningWorkout: UiWorkout?,
-    showKeepAndroidOpen: Boolean,
-    onKeepAndroidOpenCheckboxChange: (Boolean) -> Unit,
     animatedVisibilityScope: AnimatedVisibilityScope,
     deleteRunningWorkout: () -> Unit,
     navigateToRoutine: (Long) -> Unit
 ) {
     val showConfirmDeleteRunningWorkoutDialog = rememberSaveable { mutableStateOf(false) }
+    var showOtherWorkouts by rememberSaveable { mutableStateOf(false) }
 
     if (showConfirmDeleteRunningWorkoutDialog.value) {
         ConfirmDialog(
@@ -187,20 +206,6 @@ private fun SharedTransitionScope.HomeScreenContent(
                 showConfirmDeleteRunningWorkoutDialog.value = false
             }
         )
-    }
-
-    val showModalBottomSheet = rememberSaveable {
-        mutableStateOf(showKeepAndroidOpen)
-    }
-
-    if(showModalBottomSheet.value) {
-        InfoModalBottomSheet(
-            infoMode = InfoMode.KEEP_ANDROID_OPEN,
-            keepAndroidCheckboxCheck = !showKeepAndroidOpen,
-            onKeepAndroidOpenCheckboxChange = onKeepAndroidOpenCheckboxChange
-        ) {
-            showModalBottomSheet.value = false
-        }
     }
 
     // It is triggered when there's an unsaved, running workout but user taps a routine
@@ -223,6 +228,53 @@ private fun SharedTransitionScope.HomeScreenContent(
     }
 
     LibreFitLazyColumn {
+        item {
+            val dayIndex = gzclpProgram?.nextWorkoutIndex?.coerceIn(0, 3) ?: 0
+            val dayName = listOf("A1", "B1", "A2", "B2")[dayIndex]
+            val nextExercises = gzclpTemplates.filter { it.workoutIndex == dayIndex && it.enabled }
+                .sortedBy { it.position }
+            val unit = if (gzclpProgram?.unit == "LB") WeightUnit.LB else WeightUnit.KG
+            ElevatedCard(shape = MaterialTheme.shapes.extraLarge) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(15.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("GZCLP", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+                    if (gzclpProgram == null) Text("Set up your training program")
+                    else {
+                        Text("${if (gzclpActive != null) "Workout in progress" else "Next workout"} · $dayName · Week ${gzclpCompleted / gzclpProgram.daysPerWeek + 1}")
+                        nextExercises.forEach { exercise ->
+                            val lift = gzclpProgress.find { it.progressionKey == exercise.progressionKey }
+                            val tier = runCatching { Tier.valueOf(exercise.tier) }.getOrDefault(Tier.T3)
+                            val stage = runCatching { Stage.valueOf(lift?.stage ?: "FIRST") }.getOrDefault(Stage.FIRST)
+                            val load = GzclpWeights.fromGrams(lift?.recommendedGrams ?: 0, unit)
+                            Text("${exercise.tier} · ${exercise.exerciseName} · ${GzclpEngine.prescription(tier, stage).label} · ${"%.1f".format(load)} ${gzclpProgram.unit.lowercase()}")
+                        }
+                    }
+                    LibreFitButton(
+                        text = if (gzclpProgram == null) "Set up GZCLP" else if (gzclpActive != null) "Resume GZCLP workout" else "Start GZCLP workout",
+                        icon = painterResource(R.drawable.ic_play_arrow),
+                        elevated = false
+                    ) {
+                        if (gzclpProgram != null && gzclpActive == null)
+                            startGzclp { navController.navigate(Route.GzclpScreen) { launchSingleTop = true } }
+                        else navController.navigate(Route.GzclpScreen) { launchSingleTop = true }
+                    }
+                }
+            }
+        }
+        item {
+            androidx.compose.material3.TextButton(onClick = { showOtherWorkouts = !showOtherWorkouts },
+                modifier = Modifier.fillMaxWidth()) {
+                Text(if (showOtherWorkouts) "Hide other workouts" else "Other workouts and routines")
+            }
+        }
+        if (showOtherWorkouts) {
+        item {
+            androidx.compose.material3.TextButton(onClick = {
+                navController.navigate(Route.EditWorkoutScreen(0L)) { launchSingleTop = true }
+            }) { Text("Create routine") }
+        }
         item {
             val infiniteTransition = rememberInfiniteTransition()
             val animatedColor by infiniteTransition.animateColor(
@@ -391,6 +443,7 @@ private fun SharedTransitionScope.HomeScreenContent(
                 }
             }
         }
+        }
     }
 }
 
@@ -470,8 +523,6 @@ fun HomeScreenPreview() {
                         HomeScreenContent(
                             navController = rememberNavController(),
                             runningWorkout = runningWorkout.value,
-                            showKeepAndroidOpen = false,
-                            onKeepAndroidOpenCheckboxChange = {},
                             routines = listOf(
                                 UiWorkout(
                                     id = Random.nextLong(),
@@ -486,6 +537,12 @@ fun HomeScreenPreview() {
                                     title = "\uD83C\uDFC3 Tempo run"
                                 )
                             ),
+                            gzclpProgram = null,
+                            gzclpTemplates = emptyList(),
+                            gzclpProgress = emptyList(),
+                            gzclpActive = null,
+                            gzclpCompleted = 0,
+                            startGzclp = {},
                             navigateToRoutine = {},
                             deleteRunningWorkout = { runningWorkout.value = null },
                             animatedVisibilityScope = this

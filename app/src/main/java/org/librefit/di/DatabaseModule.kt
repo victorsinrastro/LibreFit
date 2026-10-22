@@ -17,6 +17,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import org.librefit.db.AppDatabase
 import org.librefit.db.dao.DatasetDao
+import org.librefit.db.dao.GzclpDao
 import org.librefit.db.dao.MeasurementDao
 import org.librefit.db.dao.WorkoutDao
 import javax.inject.Singleton
@@ -35,7 +36,8 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.NAME
         )
-            .addMigrations(AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_5_6,
+                AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8)
             .build()
     }
 
@@ -57,4 +59,7 @@ object DatabaseModule {
     fun provideDatasetDao(database: AppDatabase): DatasetDao {
         return database.getDatasetDao()
     }
+
+    @Provides
+    fun provideGzclpDao(database: AppDatabase): GzclpDao = database.getGzclpDao()
 }

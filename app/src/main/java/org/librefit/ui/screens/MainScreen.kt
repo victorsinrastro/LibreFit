@@ -43,18 +43,11 @@ import org.librefit.ui.screens.profile.ProfileScreen
 @Composable
 fun SharedTransitionScope.MainScreen(
     navController: NavHostController,
-    animatedVisibilityScope: AnimatedVisibilityScope
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    startInLibrary: Boolean = false
 ) {
-    val fabAction: () -> Unit = remember {
-        {
-            navController.navigate(Route.EditWorkoutScreen(0L)) {
-                launchSingleTop = true
-            }
-        }
-    }
-
     val pagerState = rememberPagerState(
-        initialPage = MainScreenPages.HOME.ordinal,
+        initialPage = if (startInLibrary) MainScreenPages.LIBRARY.ordinal else MainScreenPages.HOME.ordinal,
         pageCount = { MainScreenPages.entries.size }
     )
 
@@ -84,7 +77,7 @@ fun SharedTransitionScope.MainScreen(
             painterResource(R.drawable.ic_settings)
         ),
         actionsElevated = persistentListOf(true, false, false),
-        fabAction = if (pagerState.currentPage == MainScreenPages.HOME.ordinal) fabAction else null,
+        fabAction = null,
         fabIcon = painterResource(R.drawable.ic_add),
         fabDescription = stringResource(R.string.create_routine),
         fabText = stringResource(R.string.create_routine),

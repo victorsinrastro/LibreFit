@@ -57,11 +57,14 @@ fun GzclpScreen(navController: NavHostController, viewModel: GzclpViewModel = hi
     val active by viewModel.active.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
     val detailedHistory by viewModel.detailedHistory.collectAsStateWithLifecycle()
+    val measurementDefinitions by viewModel.measurementDefinitions.collectAsStateWithLifecycle()
+    val sessionMeasurements by viewModel.sessionMeasurements.collectAsStateWithLifecycle()
     val selected by viewModel.selectedSession.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val retryLabel by viewModel.retryLabel.collectAsStateWithLifecycle()
     val restorePreview by viewModel.restorePreview.collectAsStateWithLifecycle()
+    val healthPreview by viewModel.healthPreview.collectAsStateWithLifecycle()
     val replayPreview by viewModel.replayPreview.collectAsStateWithLifecycle()
     val onboardingDraft by viewModel.onboardingDraft.collectAsStateWithLifecycle()
     var tab by remember { mutableStateOf("Today") }
@@ -147,6 +150,7 @@ fun GzclpScreen(navController: NavHostController, viewModel: GzclpViewModel = hi
                     viewModel::closeSession, viewModel::saveSet,
                     onReviewProgress = { viewModel.previewHistoricalCorrection(selected!!.session.id) })
                 active != null -> ActiveWorkout(active!!, program!!, templates, progress, detailedHistory, busy,
+                    measurementDefinitions, sessionMeasurements,
                     viewModel::saveSet, viewModel::saveExercise, viewModel::saveSession,
                     viewModel::pauseSessionTimer, viewModel::resumeSessionTimer,
                     viewModel::resolveSessionTimer,
@@ -156,7 +160,8 @@ fun GzclpScreen(navController: NavHostController, viewModel: GzclpViewModel = hi
                     viewModel::addWorkingSet, viewModel::deleteSet, viewModel::moveSet,
                     viewModel::substituteSession, viewModel::undoSessionSubstitution,
                     viewModel::replaceFutureExercise,
-                    viewModel::finish, viewModel::abandon)
+                    viewModel::finish, viewModel::abandon,
+                    viewModel::recordSessionMeasurement, viewModel::deleteSessionMeasurement)
                 else -> {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -169,12 +174,16 @@ fun GzclpScreen(navController: NavHostController, viewModel: GzclpViewModel = hi
                         "Today" -> Today(program!!, templates, progress, history.count { it.status == "COMPLETED" }, busy, viewModel::start)
                         "History" -> History(history, viewModel::openSession)
                         "Progress" -> Progress(detailedHistory, progress, program!!, viewModel::openSession) { tab = "Today" }
-                        else -> ProgramSettings(program!!, templates, progress,
+                        else -> ProgramSettings(program!!, templates, progress, measurementDefinitions,
                             viewModel::updateProgram, viewModel::updateProgress,
                             viewModel::updateTemplate, viewModel::removeTemplate,
                             viewModel::confirmT1Reset, viewModel::confirmT2Reset,
-                            viewModel::exportBackup, viewModel::exportCsv, viewModel::previewRestore,
-                            restorePreview, viewModel::confirmRestore, viewModel::cancelRestore)
+                            viewModel::exportBackup, viewModel::exportCsv, viewModel::exportAnalysis,
+                            viewModel::previewRestore,
+                            restorePreview, viewModel::confirmRestore, viewModel::cancelRestore,
+                            viewModel::defineMeasurement, viewModel::clearRevisionHistory,
+                            viewModel::previewHealthImport, healthPreview,
+                            viewModel::confirmHealthImport, viewModel::cancelHealthImport)
                     }
                 }
             }
@@ -340,7 +349,10 @@ private fun Today(program: GzclpProgramEntity, templates: List<GzclpTemplateExer
 private fun ActiveWorkout(details: GzclpSessionWithDetails, program: GzclpProgramEntity,
     templates: List<GzclpTemplateExerciseEntity>, progress: List<GzclpProgressEntity>,
     history: List<GzclpSessionWithDetails>,
-    busy: Boolean, onSaveSet: (GzclpSetEntity) -> Unit,
+    busy: Boolean,
+    measurementDefinitions: List<TrainingMeasurementDefinitionEntity>,
+    sessionMeasurements: List<TrainingMeasurementEntity>,
+    onSaveSet: (GzclpSetEntity) -> Unit,
     onSaveExercise: (GzclpSessionExerciseEntity) -> Unit,
     onSaveSession: (GzclpSessionEntity) -> Unit,
     onPauseTimer: () -> Unit, onResumeTimer: () -> Unit,
@@ -356,13 +368,16 @@ private fun ActiveWorkout(details: GzclpSessionWithDetails, program: GzclpProgra
     onUndoSubstitution: (Long) -> Unit,
     onReplaceFuture: (String, String, String, Long) -> Unit,
     onFinish: () -> Unit,
-    onAbandon: () -> Unit) {
+    onAbandon: () -> Unit,
+    onRecordMeasurement: (TrainingMeasurementDefinitionEntity, Long, String) -> Unit,
+    onDeleteMeasurement: (String) -> Unit) {
     FocusedWorkout(details, program, templates, progress, history, busy, onSaveSet,
         onSaveExercise, onSaveSession, onPauseTimer, onResumeTimer, onResolveTimer,
         onAddWarmup, onGenerateWarmups,
         onReplacePendingWarmups, onSkipPendingWarmups, onSkipPendingWorkingSets,
         onAddWorkingSet, onDeleteSet, onMoveSet,
-        onSubstituteSession, onUndoSubstitution, onReplaceFuture, onFinish, onAbandon)
+        onSubstituteSession, onUndoSubstitution, onReplaceFuture, onFinish, onAbandon,
+        measurementDefinitions, sessionMeasurements, onRecordMeasurement, onDeleteMeasurement)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -385,7 +400,11 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     onSubstituteSession: (Long, String, String, Long) -> Unit,
     onUndoSubstitution: (Long) -> Unit,
     onReplaceFuture: (String, String, String, Long) -> Unit,
-    onFinish: () -> Unit, onAbandon: () -> Unit) {
+    onFinish: () -> Unit, onAbandon: () -> Unit,
+    measurementDefinitions: List<TrainingMeasurementDefinitionEntity>,
+    sessionMeasurements: List<TrainingMeasurementEntity>,
+    onRecordMeasurement: (TrainingMeasurementDefinitionEntity, Long, String) -> Unit,
+    onDeleteMeasurement: (String) -> Unit) {
     val unit = weightUnit(program)
     val sorted = details.exercises.sortedBy { it.exercise.position }
     val working = sorted.flatMap { it.sets }.filterNot { it.warmup }
@@ -409,6 +428,8 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
         .mapNotNull { past -> past.sets.filter { it.completed && !it.warmup }.maxByOrNull { it.position } }
         .firstOrNull()
     var tool by remember { mutableStateOf("") }
+    var selectedMeasurementId by rememberSaveable { mutableStateOf("") }
+    var measurementValue by rememberSaveable { mutableStateOf("") }
     var plateTarget by remember { mutableLongStateOf(-1L) }
     var focusedLoad by remember(nextSet?.id) { mutableStateOf<Long?>(null) }
     var showWarmupReview by remember { mutableStateOf(false) }
@@ -497,7 +518,8 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(when (tool) { "warmup" -> "Warm-ups"; "substitute" -> "Substitute ${ex.exerciseName}";
-                "notes" -> "Notes and effort"; else -> "Exercise options" }, style = MaterialTheme.typography.headlineSmall)
+                "notes" -> "Notes and effort"; "measure" -> "Workout check-in";
+                else -> "Exercise options" }, style = MaterialTheme.typography.headlineSmall)
             when (tool) {
                 "warmup" -> {
                     Text("Warm-ups do not affect GZCLP progression.")
@@ -565,7 +587,43 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
                     NumberOrTextField(details.session.notes,
                         { onSaveSession(details.session.copy(notes = it)) }, "Workout notes")
                 }
+                "measure" -> {
+                    Text("Optional measurements never change your GZCLP prescription.",
+                        style = MaterialTheme.typography.bodySmall)
+                    val available = measurementDefinitions.filter { it.collectionMode != "EXTERNAL" }
+                    if (available.isEmpty()) Text("Add a custom measurement in Settings → Data first.")
+                    available.forEach { definition ->
+                        FilterChip(selected = selectedMeasurementId == definition.id,
+                            onClick = { selectedMeasurementId = definition.id; measurementValue = "" },
+                            label = { Text("${definition.label}${definition.unit?.let { " ($it)" } ?: ""}") })
+                    }
+                    val selectedDefinition = available.firstOrNull { it.id == selectedMeasurementId }
+                    if (selectedDefinition != null) {
+                        if (selectedDefinition.valueType == "BOOLEAN") {
+                            Row { listOf("Yes", "No").forEach { answer ->
+                                FilterChip(selected = measurementValue == answer, onClick = { measurementValue = answer },
+                                    label = { Text(answer) })
+                            } }
+                        } else OutlinedTextField(measurementValue, { measurementValue = it },
+                            label = { Text(selectedDefinition.label) },
+                            keyboardOptions = KeyboardOptions(keyboardType = if (selectedDefinition.valueType == "NUMBER")
+                                KeyboardType.Decimal else KeyboardType.Text), singleLine = true)
+                        Button(onClick = {
+                            onRecordMeasurement(selectedDefinition, details.session.id, measurementValue)
+                            measurementValue = ""
+                        }, enabled = measurementValue.isNotBlank()) { Text("Save measurement") }
+                    }
+                    sessionMeasurements.forEach { observation ->
+                        val definition = measurementDefinitions.firstOrNull { it.id == observation.definitionId }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${definition?.label ?: "Measurement"}: ${observation.numberValue ?: observation.textValue ?: observation.booleanValue}",
+                                Modifier.weight(1f))
+                            TextButton(onClick = { onDeleteMeasurement(observation.id) }) { Text("Delete") }
+                        }
+                    }
+                }
                 else -> {
+                    TextButton(onClick = { tool = "measure" }) { Text("Workout check-in") }
                     TextButton(onClick = { tool = "substitute" }) { Text("Substitute exercise") }
                     TextButton(onClick = { onAddWorkingSet(ex); tool = "" }) { Text("Add working set") }
                     TextButton(onClick = { onSaveExercise(ex.copy(skipped = !ex.skipped)); tool = "" }) {
@@ -820,7 +878,7 @@ private fun FocusedSetRow(set: GzclpSetEntity, label: String, unit: WeightUnit,
                 onSave(set.copy(completed = true,
                     actualReps = reps.toIntOrNull()?.coerceAtLeast(0) ?: set.targetReps,
                     actualGrams = weight.toDoubleOrNull()?.let { GzclpWeights.toGrams(it, unit) } ?: set.actualGrams,
-                    rir = rir))
+                    rir = rir, completedAtMillis = System.currentTimeMillis()))
                 onComplete()
             }
         }, enabled = !saving && reps.toIntOrNull() != null && weight.toDoubleOrNull() != null,
@@ -860,7 +918,8 @@ private fun SetRow(set: GzclpSetEntity, index: Int, unit: WeightUnit,
                     actualReps = reps.toIntOrNull()?.coerceAtLeast(0) ?: set.targetReps,
                     actualGrams = weight.toDoubleOrNull()?.let { GzclpWeights.toGrams(it, unit) } ?: set.actualGrams,
                     rir = rir,
-                    completed = !set.completed
+                    completed = !set.completed,
+                    completedAtMillis = if (set.completed) null else System.currentTimeMillis()
                 ))
                 if (!set.completed) onComplete()
             }, modifier = Modifier.heightIn(min = 56.dp)) {
@@ -1139,13 +1198,19 @@ private fun TrainingTrend(points: List<TrainingPoint>, metric: String, unit: Wei
 @Composable
 private fun ProgramSettings(program: GzclpProgramEntity,
     templates: List<GzclpTemplateExerciseEntity>, progress: List<GzclpProgressEntity>,
+    measurementDefinitions: List<TrainingMeasurementDefinitionEntity>,
     onProgram: (GzclpProgramEntity) -> Unit, onProgress: (GzclpProgressEntity) -> Unit,
     onTemplate: (GzclpTemplateExerciseEntity) -> Unit,
     onRemove: (GzclpTemplateExerciseEntity) -> Unit,
     onT1Reset: (String, Long) -> Unit, onT2Reset: (String, Long) -> Unit,
     onExport: (android.net.Uri) -> Unit, onCsv: (android.net.Uri) -> Unit,
+    onAnalysis: (android.net.Uri, Boolean, Boolean) -> Unit,
     onImport: (android.net.Uri) -> Unit, restorePreview: String?,
-    onConfirmRestore: () -> Unit, onCancelRestore: () -> Unit) {
+    onConfirmRestore: () -> Unit, onCancelRestore: () -> Unit,
+    onDefineMeasurement: (String, String, String, String?, Double?, Double?) -> Unit,
+    onClearRevisions: () -> Unit,
+    onPreviewHealth: (android.net.Uri) -> Unit, healthPreview: String?,
+    onConfirmHealth: () -> Unit, onCancelHealth: () -> Unit) {
     val unit = weightUnit(program)
     val context = LocalContext.current
     var notificationsGranted by remember { mutableStateOf(Build.VERSION.SDK_INT < 33 ||
@@ -1157,6 +1222,15 @@ private fun ProgramSettings(program: GzclpProgramEntity,
     var selectedDay by remember { mutableIntStateOf(0) }
     var newTier by remember { mutableStateOf("T3") }
     var group by rememberSaveable { mutableStateOf("Program") }
+    var includeAnalysisNotes by rememberSaveable { mutableStateOf(true) }
+    var includeExternalData by rememberSaveable { mutableStateOf(false) }
+    var measurementKey by rememberSaveable { mutableStateOf("") }
+    var measurementLabel by rememberSaveable { mutableStateOf("") }
+    var measurementType by rememberSaveable { mutableStateOf("NUMBER") }
+    var measurementUnit by rememberSaveable { mutableStateOf("") }
+    var measurementMinimum by rememberSaveable { mutableStateOf("") }
+    var measurementMaximum by rememberSaveable { mutableStateOf("") }
+    var showClearRevisions by remember { mutableStateOf(false) }
     val settingsScroll = rememberScrollState()
     LaunchedEffect(group) { settingsScroll.scrollTo(0) }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) {
@@ -1165,13 +1239,28 @@ private fun ProgramSettings(program: GzclpProgramEntity,
     val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) {
         if (it != null) onCsv(it)
     }
+    val analysisLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) {
+        if (it != null) onAnalysis(it, includeAnalysisNotes, includeExternalData)
+    }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
         if (it != null) onImport(it)
+    }
+    val healthLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
+        if (it != null) onPreviewHealth(it)
     }
     if (restorePreview != null) AlertDialog(onDismissRequest = onCancelRestore,
         title = { Text("Restore training data?") }, text = { Text(restorePreview) },
         confirmButton = { TextButton(onClick = onConfirmRestore) { Text("Replace local data") } },
         dismissButton = { TextButton(onClick = onCancelRestore) { Text("Cancel") } })
+    if (healthPreview != null) AlertDialog(onDismissRequest = onCancelHealth,
+        title = { Text("Import health context?") }, text = { Text(healthPreview) },
+        confirmButton = { TextButton(onClick = onConfirmHealth) { Text("Import observations") } },
+        dismissButton = { TextButton(onClick = onCancelHealth) { Text("Cancel") } })
+    if (showClearRevisions) AlertDialog(onDismissRequest = { showClearRevisions = false },
+        title = { Text("Delete revision history?") },
+        text = { Text("This removes recorded change history. Current workouts and measurements stay available. Export a backup first if you want to keep the revisions.") },
+        confirmButton = { TextButton(onClick = { showClearRevisions = false; onClearRevisions() }) { Text("Delete history") } },
+        dismissButton = { TextButton(onClick = { showClearRevisions = false }) { Text("Cancel") } })
     Column(Modifier.fillMaxSize().verticalScroll(settingsScroll).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
@@ -1184,7 +1273,64 @@ private fun ProgramSettings(program: GzclpProgramEntity,
         Text("Data ownership", style = MaterialTheme.typography.titleLarge)
         TextButton(onClick = { backupLauncher.launch("librefit-training-backup.json") }) { Text("Export complete backup") }
         TextButton(onClick = { csvLauncher.launch("librefit-workouts.csv") }) { Text("Export workout CSV") }
+        Text("Analysis archive", style = MaterialTheme.typography.titleMedium)
+        Text("ZIP with linked raw JSON, CSV, revisions, definitions, and a data dictionary.",
+            style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = includeAnalysisNotes, onCheckedChange = { includeAnalysisNotes = it })
+            Text("Include notes and cues")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = includeExternalData, onCheckedChange = { includeExternalData = it })
+            Text("Include external observations")
+        }
+        TextButton(onClick = { analysisLauncher.launch("librefit-training-analysis.zip") }) {
+            Text("Export analysis ZIP")
+        }
         TextButton(onClick = { restoreLauncher.launch(arrayOf("application/json", "*/*")) }) { Text("Restore backup") }
+        TextButton(onClick = { healthLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
+            Text("Import Health Connect exporter JSONL")
+        }
+        HorizontalDivider()
+        Text("Custom measurements", style = MaterialTheme.typography.titleMedium)
+        Text("Optional check-ins appear in the workout’s More menu.", style = MaterialTheme.typography.bodySmall)
+        measurementDefinitions.forEach { definition ->
+            Text("${definition.label} · ${definition.valueType.lowercase()}${definition.unit?.let { " · $it" } ?: ""}")
+        }
+        OutlinedTextField(measurementKey, { measurementKey = it }, label = { Text("Stable key (e.g. readiness)") },
+            singleLine = true)
+        OutlinedTextField(measurementLabel, { measurementLabel = it }, label = { Text("Display name") },
+            singleLine = true)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("NUMBER", "TEXT", "BOOLEAN").forEach { type ->
+                FilterChip(selected = measurementType == type, onClick = { measurementType = type },
+                    label = { Text(type.lowercase()) })
+            }
+        }
+        if (measurementType == "NUMBER") {
+            OutlinedTextField(measurementUnit, { measurementUnit = it }, label = { Text("Unit (optional)") },
+                singleLine = true)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(measurementMinimum, { measurementMinimum = it }, label = { Text("Minimum") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(measurementMaximum, { measurementMaximum = it }, label = { Text("Maximum") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true, modifier = Modifier.weight(1f))
+            }
+        }
+        TextButton(onClick = {
+            onDefineMeasurement(measurementKey.trim(), measurementLabel.trim(), measurementType,
+                measurementUnit.trim().takeIf { measurementType == "NUMBER" && it.isNotEmpty() },
+                measurementMinimum.toDoubleOrNull().takeIf { measurementType == "NUMBER" },
+                measurementMaximum.toDoubleOrNull().takeIf { measurementType == "NUMBER" })
+        }, enabled = measurementKey.isNotBlank() && measurementLabel.isNotBlank() &&
+            (measurementMinimum.isBlank() || measurementMinimum.toDoubleOrNull() != null) &&
+            (measurementMaximum.isBlank() || measurementMaximum.toDoubleOrNull() != null)) {
+            Text("Add measurement")
+        }
+        HorizontalDivider()
+        TextButton(onClick = { showClearRevisions = true }) { Text("Delete revision history") }
         }
         if (group == "Program") {
         Text("Training days per week")

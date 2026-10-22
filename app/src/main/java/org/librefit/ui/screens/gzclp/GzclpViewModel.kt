@@ -7,6 +7,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -17,6 +19,9 @@ import org.librefit.db.entity.*
 import org.librefit.db.repository.GzclpRepository
 import org.librefit.db.repository.ReplayPreview
 import org.librefit.gzclp.data.TrainingBackup
+import org.librefit.gzclp.data.TrainingAnalysisExport
+import org.librefit.gzclp.data.TrainingMeasurements
+import org.librefit.gzclp.data.HealthConnectJsonlImport
 import org.librefit.gzclp.data.GzclpRestNotification
 import android.net.Uri
 import org.librefit.gzclp.domain.GzclpWeights
@@ -46,6 +51,9 @@ val defaultLifts = listOf(
 class GzclpViewModel @Inject constructor(
     private val repository: GzclpRepository,
     private val backup: TrainingBackup,
+    private val analysisExport: TrainingAnalysisExport,
+    private val measurements: TrainingMeasurements,
+    private val healthImport: HealthConnectJsonlImport,
     private val restNotification: GzclpRestNotification,
     private val onboardingDraftStore: GzclpOnboardingDraftStore
 ) : ViewModel() {
@@ -69,6 +77,12 @@ class GzclpViewModel @Inject constructor(
     val progress = repository.progress.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val active = repository.activeSession.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val history = repository.history.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val measurementDefinitions = measurements.definitions.stateIn(viewModelScope,
+        SharingStarted.WhileSubscribed(5_000), emptyList())
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val sessionMeasurements = repository.activeSession.flatMapLatest { active ->
+        if (active == null) flowOf(emptyList()) else measurements.observations("SESSION", active.session.id.toString())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val detailedHistory = repository.history.mapLatest { sessions ->
         sessions.filter { it.status == "COMPLETED" }.mapNotNull { repository.getSession(it.id) }
@@ -100,7 +114,9 @@ class GzclpViewModel @Inject constructor(
     }
     val restorePreview = MutableStateFlow<String?>(null)
     val replayPreview = MutableStateFlow<ReplayPreview?>(null)
+    val healthPreview = MutableStateFlow<String?>(null)
     private var pendingRestore: String? = null
+    private var pendingHealthUri: Uri? = null
 
     fun exportBackup(uri: Uri): kotlinx.coroutines.Job = viewModelScope.launch {
         try { backup.export(uri); clearError() }
@@ -111,6 +127,73 @@ class GzclpViewModel @Inject constructor(
         try { backup.exportCsv(uri); clearError() }
         catch (e: Exception) { recoverableError("CSV was not exported. ${e.message.orEmpty()}",
             "Retry export") { exportCsv(uri) } }
+    }
+    fun exportAnalysis(uri: Uri, includeNotes: Boolean, includeExternal: Boolean): kotlinx.coroutines.Job =
+        viewModelScope.launch {
+            try {
+                analysisExport.export(uri, TrainingAnalysisExport.Privacy(includeNotes, includeExternal))
+                clearError()
+            } catch (e: Exception) {
+                recoverableError("Analysis archive was not exported. ${e.message.orEmpty()}",
+                    "Retry export") { exportAnalysis(uri, includeNotes, includeExternal) }
+            }
+        }
+    fun defineMeasurement(key: String, label: String, type: String, unit: String?,
+        minimum: Double?, maximum: Double?): kotlinx.coroutines.Job = viewModelScope.launch {
+        try { measurements.define(key, label, type, unit, minimum, maximum); clearError() }
+        catch (e: Exception) { validationOrRetry(e, "Measurement was not added", "Retry add") {
+            defineMeasurement(key, label, type, unit, minimum, maximum) } }
+    }
+
+    fun recordSessionMeasurement(definition: TrainingMeasurementDefinitionEntity, sessionId: Long,
+        value: String): kotlinx.coroutines.Job = viewModelScope.launch {
+        try {
+            val number = if (definition.valueType == "NUMBER") value.toDoubleOrNull()
+                ?: throw IllegalArgumentException("Enter a number") else null
+            val boolean = if (definition.valueType == "BOOLEAN") when (value.lowercase()) {
+                "yes", "true" -> true
+                "no", "false" -> false
+                else -> throw IllegalArgumentException("Choose yes or no")
+            } else null
+            measurements.record(definition.id, "SESSION", sessionId.toString(), System.currentTimeMillis(),
+                numberValue = number, textValue = if (definition.valueType == "TEXT") value else null,
+                booleanValue = boolean, quality = "SELF_REPORTED")
+            clearError()
+        } catch (e: Exception) { validationOrRetry(e, "Measurement was not saved", "Retry save") {
+            recordSessionMeasurement(definition, sessionId, value) } }
+    }
+
+    fun deleteSessionMeasurement(id: String): kotlinx.coroutines.Job = viewModelScope.launch {
+        try { measurements.deleteObservation(id); clearError() }
+        catch (e: Exception) { recoverableError("Measurement was not deleted. ${e.message.orEmpty()}",
+            "Retry delete") { deleteSessionMeasurement(id) } }
+    }
+
+    fun clearRevisionHistory(): kotlinx.coroutines.Job = viewModelScope.launch {
+        try { measurements.clearRevisionHistory(); clearError() }
+        catch (e: Exception) { recoverableError("Revision history was not cleared. ${e.message.orEmpty()}",
+            "Retry clear") { clearRevisionHistory() } }
+    }
+
+    fun previewHealthImport(uri: Uri): kotlinx.coroutines.Job = viewModelScope.launch {
+        try {
+            healthPreview.value = healthImport.preview(uri)
+            pendingHealthUri = uri
+            clearError()
+        } catch (e: Exception) { validationOrRetry(e, "Health export could not be read",
+            "Retry preview") { previewHealthImport(uri) } }
+    }
+
+    fun cancelHealthImport() { pendingHealthUri = null; healthPreview.value = null }
+
+    fun confirmHealthImport(): kotlinx.coroutines.Job = viewModelScope.launch {
+        val uri = pendingHealthUri ?: return@launch
+        try {
+            healthImport.import(uri)
+            cancelHealthImport()
+            clearError()
+        } catch (e: Exception) { validationOrRetry(e, "Health observations were not imported",
+            "Retry import") { confirmHealthImport() } }
     }
     fun previewRestore(uri: Uri): kotlinx.coroutines.Job = viewModelScope.launch {
         try {

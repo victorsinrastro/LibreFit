@@ -209,7 +209,9 @@ class GzclpWarmupPersistenceTest {
         val workingIds = original.filterNot { it.warmup }.map { it.id }
         repo.generateWarmups(exerciseId, replacePending = true)
         val regenerated = fixture.exercise().sets
-        assertEquals(completed, regenerated.first { it.id == completed.id })
+        val kept = regenerated.first { it.id == completed.id }
+        assertEquals(completed, kept.copy(completedAtMillis = null, lastEditedAtMillis = null))
+        assertTrue(kept.completedAtMillis != null)
         assertEquals(workingIds, regenerated.filterNot { it.warmup }.map { it.id })
         assertTrue(regenerated.filter { it.warmup && !it.completed }.none { it.id in original.map { old -> old.id } })
     }
@@ -225,7 +227,9 @@ class GzclpWarmupPersistenceTest {
         repo.generateWarmups(exerciseId)
         val second = fixture.exercise().sets.filter { it.warmup }
         assertEquals(first.size, second.size)
-        assertEquals(edited, second.first { it.id == edited.id })
+        val kept = second.first { it.id == edited.id }
+        assertEquals(edited, kept.copy(completedAtMillis = null, lastEditedAtMillis = null))
+        assertTrue(kept.completedAtMillis != null)
         assertEquals(first.map { it.id }.toSet(), second.map { it.id }.toSet())
 
         // A user-created warm-up must also block replacement of the existing warm-up sequence.

@@ -9,6 +9,9 @@
 package org.librefit.db.repository
 
 import kotlinx.coroutines.flow.Flow
+import androidx.room.withTransaction
+import org.librefit.db.AppDatabase
+import org.librefit.gzclp.data.TrainingLedger
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -35,8 +38,10 @@ import javax.inject.Singleton
  */
 @Singleton
 class WorkoutRepository @Inject constructor(
-    private val workoutDao: WorkoutDao
+    private val workoutDao: WorkoutDao,
+    private val database: AppDatabase
 ) {
+    private val ledger = TrainingLedger(database)
     private val mutex = Mutex()
 
     /**
@@ -82,12 +87,17 @@ class WorkoutRepository @Inject constructor(
             ?: Workout()
     }
 
-    suspend fun updateWorkout(workout: Workout) {
+    suspend fun updateWorkout(workout: Workout) = database.withTransaction {
+        val before = ledger.workoutSnapshot(workout.id)
         workoutDao.updateWorkout(workout)
+        ledger.recordAggregate("LEGACY_WORKOUT_EDITED", "workouts", workout.id.toString(),
+            before, ledger.workoutSnapshot(workout.id))
     }
 
-    suspend fun deleteWorkout(workout: Workout) {
+    suspend fun deleteWorkout(workout: Workout) = database.withTransaction {
+        val before = ledger.workoutSnapshot(workout.id)
         workoutDao.deleteWorkout(workout)
+        ledger.recordAggregate("LEGACY_WORKOUT_DELETED", "workouts", workout.id.toString(), before, null)
     }
 
 
@@ -109,8 +119,13 @@ class WorkoutRepository @Inject constructor(
      */
     suspend fun addWorkoutWithExercisesAndSets(
         workoutWithExercisesAndSets: WorkoutWithExercisesAndSets
-    ): Long {
-        return workoutDao.addWorkoutWithExercisesAndSets(workoutWithExercisesAndSets)
+    ): Long = database.withTransaction {
+        val before = if (workoutWithExercisesAndSets.workout.id == 0L) null else
+            ledger.workoutSnapshot(workoutWithExercisesAndSets.workout.id)
+        val id = workoutDao.addWorkoutWithExercisesAndSets(workoutWithExercisesAndSets)
+        ledger.recordAggregate("LEGACY_WORKOUT_SAVED", "workouts", id.toString(), before,
+            ledger.workoutSnapshot(id))
+        id
     }
 
 

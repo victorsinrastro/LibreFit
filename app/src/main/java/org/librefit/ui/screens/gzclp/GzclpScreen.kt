@@ -603,8 +603,8 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
                 Row(Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { tool = "warmup" }) { Text("Warm up", maxLines = 1) }
-                    if (ExerciseAlternatives.equipmentFor(ex.exerciseId) == "Barbell")
-                        TextButton(onClick = { plateTarget = ex.recommendedGrams }) { Text("Plates", maxLines = 1) }
+                    if (nextSet != null && ExerciseAlternatives.equipmentFor(ex.exerciseId) == "Barbell")
+                        TextButton(onClick = { plateTarget = nextSet.actualGrams }) { Text("Plates", maxLines = 1) }
                     TextButton(onClick = { tool = "notes" }) { Text("Notes", maxLines = 1) }
                     TextButton(onClick = { tool = "options" }) { Text("More", maxLines = 1) }
                 }

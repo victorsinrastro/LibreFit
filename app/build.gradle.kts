@@ -30,6 +30,9 @@ android {
     lint {
         baseline = file("lint-baseline.xml")
         checkGeneratedSources = false
+        // AGP 9.2 still scans Room KSP output and reports its internal API calls
+        // as app violations. All current RestrictedApi findings come from build/generated/ksp.
+        disable += "RestrictedApi"
 
         warning += listOf("MissingTranslation")
     }

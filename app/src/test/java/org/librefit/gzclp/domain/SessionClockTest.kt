@@ -18,4 +18,11 @@ class SessionClockTest {
         assertNull(legacy.elapsed(100_000))
         assertEquals(12 * 60_000L, legacy.resolve(12).elapsed(100_000))
     }
+
+    @Test fun forgottenRunningIntervalCanBeCorrectedAfterPause() {
+        val started = 1_000L
+        val pausedAfterDays = SessionClock(0, started).pause(started + 3 * 86_400_000L)
+        assertEquals(3 * 86_400_000L, pausedAfterDays.accumulatedMillis)
+        assertEquals(40 * 60_000L, pausedAfterDays.resolve(40).elapsed(started + 4 * 86_400_000L))
+    }
 }

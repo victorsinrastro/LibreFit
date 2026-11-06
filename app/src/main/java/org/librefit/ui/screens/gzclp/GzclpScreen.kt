@@ -603,6 +603,18 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
                 }
             }
         }
+        if (activeDuration != null && details.session.activeSinceMillis == null) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(legacyMinutes, { legacyMinutes = it },
+                    label = { Text("Correct active minutes") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true, modifier = Modifier.weight(1f))
+                TextButton(onClick = { legacyMinutes.toLongOrNull()?.let(onResolveTimer) },
+                    enabled = legacyMinutes.toLongOrNull()?.let { it >= 0 } == true) { Text("Set time") }
+            }
+        }
         if (details.session.restDeadlineMillis > 0L || details.session.restPausedMillis > 0L) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Text(if (details.session.restPausedMillis > 0L) "Rest paused" else if (remaining == 0L) "Ready for next set" else

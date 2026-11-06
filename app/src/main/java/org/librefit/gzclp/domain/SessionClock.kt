@@ -14,7 +14,7 @@ data class SessionClock(val accumulatedMillis: Long?, val runningSinceMillis: Lo
     }
 
     fun resolve(activeMinutes: Long): SessionClock {
-        require(accumulatedMillis == null && activeMinutes >= 0 && activeMinutes <= Long.MAX_VALUE / 60_000)
+        require(runningSinceMillis == null && activeMinutes >= 0 && activeMinutes <= Long.MAX_VALUE / 60_000)
         return SessionClock(activeMinutes * 60_000, null)
     }
 }

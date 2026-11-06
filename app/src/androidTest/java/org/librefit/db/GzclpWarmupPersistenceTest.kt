@@ -153,6 +153,8 @@ class GzclpWarmupPersistenceTest {
             repo.resumeSessionTimer(id, started + 4 * 86_400_000L)
             repo.pauseSessionTimer(id, started + 4 * 86_400_000L + 15 * 60_000L)
             assertEquals(45 * 60_000L, repo.getSession(id)!!.session.activeElapsedMillis)
+            repo.resolveSessionTimer(id, 40)
+            assertEquals(40 * 60_000L, repo.getSession(id)!!.session.activeElapsedMillis)
             // Simulate a pre-migration active session whose duration cannot be inferred.
             db.getGzclpDao().upsertSession(repo.getSession(id)!!.session.copy(
                 activeElapsedMillis = null, activeSinceMillis = null))

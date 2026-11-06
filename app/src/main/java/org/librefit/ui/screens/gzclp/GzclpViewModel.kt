@@ -256,6 +256,11 @@ class GzclpViewModel @Inject constructor(
         catch (e: Exception) { error.value = e.message ?: "Set could not be removed." }
     }
 
+    fun skipPendingWarmups(exercise: GzclpSessionExerciseEntity) = viewModelScope.launch {
+        try { sessionEditMutex.withLock { repository.skipPendingWarmups(exercise.id) } }
+        catch (e: Exception) { error.value = e.message ?: "Warm-ups could not be skipped." }
+    }
+
     fun moveSet(set: GzclpSetEntity, direction: Int) = viewModelScope.launch {
         sessionEditMutex.withLock {
             val item = active.value?.exercises?.firstOrNull { it.exercise.id == set.sessionExerciseId }

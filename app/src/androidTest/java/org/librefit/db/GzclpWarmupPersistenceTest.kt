@@ -41,6 +41,30 @@ class GzclpWarmupPersistenceTest {
         } finally { db.close() }
     }
 
+    @Test fun skippingPendingWarmupsLeavesWorkingSetsAndCompletedWarmups() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        try {
+            val repo = GzclpRepository(db, db.getGzclpDao())
+            repo.configure(GzclpProgramEntity(),
+                listOf(GzclpTemplateExerciseEntity("a1-squat", 0, 0, "squat", "Squat", "T1", "squat:T1")),
+                listOf(GzclpProgressEntity("squat:T1", "squat", "T1", recommendedGrams = 60_000,
+                    incrementGrams = 5_000)))
+            val sessionId = repo.startSession(0)
+            val exerciseId = repo.getSession(sessionId)!!.exercises.single().exercise.id
+            repo.generateWarmups(exerciseId)
+            val before = repo.getSession(sessionId)!!.exercises.single()
+            val logged = before.sets.first { it.warmup }.copy(completed = true)
+            repo.saveSet(logged)
+            val workingIds = before.sets.filterNot { it.warmup }.map { it.id }
+            repo.skipPendingWarmups(exerciseId)
+            val resumed = repo.getSession(sessionId)!!.exercises.single().sets
+            assertEquals(listOf(logged), resumed.filter { it.warmup })
+            assertEquals(workingIds, resumed.filterNot { it.warmup }.map { it.id })
+            assertTrue(resumed.filterNot { it.warmup }.all { !it.completed })
+        } finally { db.close() }
+    }
+
     @Test fun explicitRegenerationKeepsCompletedWarmupsAndWorkingSets() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()

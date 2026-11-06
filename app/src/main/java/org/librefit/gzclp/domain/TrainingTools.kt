@@ -34,6 +34,13 @@ object PlateCalculator {
 
 data class WarmupStep(val grams: Long, val reps: Int)
 
+object PerformedVolume {
+    fun inUnit(sets: List<CompletedSet>, unit: WeightUnit): Double = sets
+        .asSequence()
+        .filter { it.isComplete && !it.isWarmup && it.reps > 0 && it.weightGrams > 0 }
+        .sumOf { GzclpWeights.fromGrams(it.weightGrams, unit) * it.reps }
+}
+
 object WarmupGenerator {
     fun generate(
         targetGrams: Long, barGrams: Long, inventory: List<Plate>,

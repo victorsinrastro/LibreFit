@@ -177,6 +177,11 @@ private fun displayWeight(grams: Long, unit: WeightUnit): String =
     String.format(Locale.US, "%.3f", GzclpWeights.fromGrams(grams, unit))
         .trimEnd('0').trimEnd('.')
 
+private fun displayVolume(sets: List<GzclpSetEntity>, unit: WeightUnit): String =
+    String.format(Locale.US, "%.3f", PerformedVolume.inUnit(sets.map {
+        CompletedSet(it.actualReps, it.actualGrams, it.warmup, it.completed)
+    }, unit)).trimEnd('0').trimEnd('.')
+
 private fun weightUnit(program: GzclpProgramEntity): WeightUnit =
     runCatching { WeightUnit.valueOf(program.unit) }.getOrDefault(WeightUnit.KG)
 
@@ -786,14 +791,13 @@ private fun SessionSummary(details: GzclpSessionWithDetails, program: GzclpProgr
     onReviewProgress: () -> Unit) {
     val unit = weightUnit(program)
     val sets = details.exercises.flatMap { it.sets }.filter { it.completed && !it.warmup }
-    val volume = sets.sumOf { it.actualGrams * it.actualReps }
     val minutes = (((details.session.finishedAt ?: System.currentTimeMillis()) -
         details.session.startedAt) / 60_000L).coerceAtLeast(0)
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Text("Workout ${dayNames[details.session.workoutIndex]} complete", style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold)
-            Text("${details.exercises.count { ex -> ex.sets.any { it.completed } }} exercises · $minutes min · ${displayWeight(volume, unit)} ${program.unit.lowercase()} volume",
+            Text("${details.exercises.count { ex -> ex.sets.any { it.completed && !it.warmup && it.actualReps > 0 && it.actualGrams > 0 } }} exercises · $minutes min · ${displayVolume(sets, unit)} ${program.unit.lowercase()} volume",
                 style = MaterialTheme.typography.bodySmall)
             Text("Next prescriptions", style = MaterialTheme.typography.titleLarge)
             if (details.session.notes.isNotBlank()) Text(details.session.notes)
@@ -846,7 +850,7 @@ private fun SessionSummary(details: GzclpSessionWithDetails, program: GzclpProgr
                     if (currentBest != null && previousBest != null && currentBest > previousBest)
                         Text("AMRAP rep PR · $currentBest reps", color = MaterialTheme.colorScheme.primary)
                     if (currentVolume > 0 && pastVolumes.isNotEmpty() && currentVolume > (pastVolumes.maxOrNull() ?: 0L))
-                        Text("Session volume PR · ${displayWeight(currentVolume, unit)} ${program.unit.lowercase()}",
+                        Text("Session volume PR · ${displayVolume(item.sets, unit)} ${program.unit.lowercase()}",
                             color = MaterialTheme.colorScheme.primary)
                 }
             }

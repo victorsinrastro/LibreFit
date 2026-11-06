@@ -145,6 +145,7 @@ fun GzclpScreen(navController: NavHostController, viewModel: GzclpViewModel = hi
                     viewModel::saveSet, viewModel::saveExercise, viewModel::saveSession,
                     viewModel::addWarmup, viewModel::generateWarmups, viewModel::replacePendingWarmups,
                     viewModel::skipPendingWarmups,
+                    viewModel::skipPendingWorkingSets,
                     viewModel::addWorkingSet, viewModel::deleteSet, viewModel::moveSet,
                     viewModel::substituteSession, viewModel::undoSessionSubstitution,
                     viewModel::replaceFutureExercise,
@@ -336,6 +337,7 @@ private fun ActiveWorkout(details: GzclpSessionWithDetails, program: GzclpProgra
     onGenerateWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onReplacePendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onSkipPendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
+    onSkipPendingWorkingSets: (GzclpSessionExerciseEntity) -> Unit,
     onAddWorkingSet: (GzclpSessionExerciseEntity) -> Unit,
     onDeleteSet: (Long) -> Unit, onMoveSet: (GzclpSetEntity, Int) -> Unit,
     onSubstituteSession: (Long, String, String, Long) -> Unit,
@@ -345,7 +347,8 @@ private fun ActiveWorkout(details: GzclpSessionWithDetails, program: GzclpProgra
     onAbandon: () -> Unit) {
     FocusedWorkout(details, program, templates, progress, history, busy, onSaveSet,
         onSaveExercise, onSaveSession, onAddWarmup, onGenerateWarmups,
-        onReplacePendingWarmups, onSkipPendingWarmups, onAddWorkingSet, onDeleteSet, onMoveSet,
+        onReplacePendingWarmups, onSkipPendingWarmups, onSkipPendingWorkingSets,
+        onAddWorkingSet, onDeleteSet, onMoveSet,
         onSubstituteSession, onUndoSubstitution, onReplaceFuture, onFinish, onAbandon)
 }
 
@@ -361,6 +364,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     onGenerateWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onReplacePendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onSkipPendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
+    onSkipPendingWorkingSets: (GzclpSessionExerciseEntity) -> Unit,
     onAddWorkingSet: (GzclpSessionExerciseEntity) -> Unit,
     onDeleteSet: (Long) -> Unit, onMoveSet: (GzclpSetEntity, Int) -> Unit,
     onSubstituteSession: (Long, String, String, Long) -> Unit,
@@ -609,6 +613,12 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
                         onSaveSession(details.session.copy(restDeadlineMillis = System.currentTimeMillis() + seconds * 1000L,
                             restPausedMillis = 0))
                 }
+                TextButton(onClick = {
+                    onSkipPendingWorkingSets(ex)
+                    chosenId = sorted.firstOrNull { other -> other.exercise.position > ex.position &&
+                        !other.exercise.skipped && other.sets.any { !it.warmup && !it.completed } }
+                        ?.exercise?.id ?: chosenId
+                }, enabled = !busy) { Text("Skip remaining working sets") }
             }
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()),
@@ -630,7 +640,11 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
             }
             item {
                 Text("Working sets", style = MaterialTheme.typography.titleMedium)
-                if (nextWorking == null) Text(if (ex.skipped) "Exercise skipped" else "All working sets recorded.")
+                if (nextWorking == null) Text(when {
+                    ex.skipped -> "Exercise skipped"
+                    exerciseSets.size < ex.targetSets -> "${ex.targetSets - exerciseSets.size} working sets omitted."
+                    else -> "All working sets recorded."
+                })
                 exerciseSets.forEachIndexed { index, set ->
                     if (set.completed) CompactCompletedSet("${index + 1}${if (set.amrap) " · AMRAP" else ""}", set, unit) {
                         onSaveSet(set.copy(completed = false))

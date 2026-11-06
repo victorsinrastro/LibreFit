@@ -87,6 +87,10 @@ object GzclpEngine {
             DecisionStatus.RESET_REQUIRED, progress, "Record a new five-rep max to restart this lift."
         )
         if (working.isEmpty()) return ProgressionDecision(DecisionStatus.SKIPPED, progress, "Exercise skipped.")
+        if (sets.count { !it.isWarmup } < target.sets) return ProgressionDecision(
+            DecisionStatus.SKIPPED, progress,
+            "Partial exercise: remaining working sets were skipped; progression unchanged.",
+            working.lastOrNull { it.weightGrams > 0 }?.weightGrams)
         val actualLoad = working.last().weightGrams
         val success = working.size >= target.sets &&
             working.take(target.sets).all { it.reps >= target.reps }

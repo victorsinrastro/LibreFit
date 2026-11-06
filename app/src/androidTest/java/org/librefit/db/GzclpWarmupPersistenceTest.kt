@@ -52,6 +52,35 @@ class GzclpWarmupPersistenceTest {
     private suspend fun PersistenceFixture.exercise() =
         repository.getSession(sessionId)!!.exercises.single()
 
+    @Test fun threeOfFiveThenSkipTwoPreservesT2AndProgression() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        try {
+            val repo = GzclpRepository(db, db.getGzclpDao())
+            repo.configure(GzclpProgramEntity(),
+                listOf(
+                    GzclpTemplateExerciseEntity("a1-squat", 0, 0, "squat", "Squat", "T1", "squat:T1"),
+                    GzclpTemplateExerciseEntity("a1-bench", 0, 1, "bench", "Bench", "T2", "bench:T2")),
+                listOf(
+                    GzclpProgressEntity("squat:T1", "squat", "T1", recommendedGrams = 60_000, incrementGrams = 5_000),
+                    GzclpProgressEntity("bench:T2", "bench", "T2", recommendedGrams = 40_000, incrementGrams = 2_500)))
+            val sessionId = repo.startSession(0)
+            val initial = repo.getSession(sessionId)!!.exercises
+            val squat = initial.first { it.exercise.exerciseId == "squat" }
+            val bench = initial.first { it.exercise.exerciseId == "bench" }
+            squat.sets.filterNot { it.warmup }.take(3).forEach { repo.saveSet(it.copy(completed = true, actualReps = 3)) }
+            repo.skipPendingWorkingSets(squat.exercise.id)
+            val resumed = repo.getSession(sessionId)!!.exercises
+            assertEquals(3, resumed.first { it.exercise.id == squat.exercise.id }.sets.count { !it.warmup && it.completed })
+            assertEquals(0, resumed.first { it.exercise.id == squat.exercise.id }.sets.count { !it.warmup && !it.completed })
+            assertEquals(bench.sets.map { it.id }, resumed.first { it.exercise.id == bench.exercise.id }.sets.map { it.id })
+            repo.finishSession(sessionId)
+            val finished = repo.getSession(sessionId)!!.exercises.first { it.exercise.id == squat.exercise.id }
+            assertTrue(finished.exercise.progressionReason.contains("Partial exercise"))
+            assertEquals(60_000, db.getGzclpDao().progress("squat:T1")!!.recommendedGrams)
+        } finally { db.close() }
+    }
+
     @Test fun poundWorkingWeightsSurviveRoomSaveAndReload() = withFixture(
         unit = WeightUnit.LB,
         recommendedGrams = GzclpWeights.toGrams(90.0, WeightUnit.LB),

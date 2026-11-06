@@ -340,6 +340,11 @@ class GzclpRepository @Inject constructor(
         exercise.sets.filter { it.warmup && !it.completed }.forEach { dao.deleteSet(it.id) }
     }
 
+    suspend fun skipPendingWorkingSets(exerciseId: Long) = database.withTransaction {
+        val exercise = activeExercise(exerciseId)
+        exercise.sets.filter { !it.warmup && !it.completed }.forEach { dao.deleteSet(it.id) }
+    }
+
     suspend fun generateWarmups(exerciseId: Long, replacePending: Boolean = false) = database.withTransaction {
         val item = activeExercise(exerciseId)
         val program = dao.program() ?: error("Program missing")

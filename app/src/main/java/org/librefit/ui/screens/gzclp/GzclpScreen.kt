@@ -855,10 +855,14 @@ private fun SessionSummary(details: GzclpSessionWithDetails, program: GzclpProgr
                         Text("Progression needs review after this correction.",
                             style = MaterialTheme.typography.bodySmall)
                     } else if (item.exercise.progressionReason.isNotBlank()) {
-                        Text("Next: ${item.exercise.nextStage?.let { Stage.valueOf(it) }?.let {
-                            GzclpEngine.prescription(Tier.valueOf(item.exercise.tier), it).label
-                        } ?: "—"} at ${displayWeight(item.exercise.nextRecommendedGrams ?: item.exercise.recommendedGrams, unit)} ${program.unit.lowercase()}",
-                            style = MaterialTheme.typography.titleMedium)
+                        if (item.exercise.progressionReason.startsWith("No valid working weight")) {
+                            Text("Next load needs review", style = MaterialTheme.typography.titleMedium)
+                        } else {
+                            Text("Next: ${item.exercise.nextStage?.let { Stage.valueOf(it) }?.let {
+                                GzclpEngine.prescription(Tier.valueOf(item.exercise.tier), it).label
+                            } ?: "—"} at ${displayWeight(item.exercise.nextRecommendedGrams ?: item.exercise.recommendedGrams, unit)} ${program.unit.lowercase()}",
+                                style = MaterialTheme.typography.titleMedium)
+                        }
                         Text(item.exercise.progressionReason, style = MaterialTheme.typography.bodySmall)
                     }
                     var correcting by remember(item.exercise.id) { mutableStateOf(false) }

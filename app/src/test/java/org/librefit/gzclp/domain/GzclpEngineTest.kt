@@ -68,6 +68,31 @@ class GzclpEngineTest {
                 listOf(CompletedSet(0, 60_000, isComplete = false), CompletedSet(0, 60_000, isComplete = false))).status)
     }
 
+    @Test fun zeroWeightEntriesDoNotBecomeTheNextSquatPrescription() {
+        val squat = progress(Tier.T1, load = GzclpWeights.toGrams(135.0, WeightUnit.LB))
+        val recorded = listOf(
+            CompletedSet(3, squat.recommendedGrams),
+            CompletedSet(3, squat.recommendedGrams),
+            CompletedSet(3, squat.recommendedGrams),
+            CompletedSet(3, 0),
+            CompletedSet(0, 0),
+        )
+        val decision = GzclpEngine.evaluate(squat, recorded)
+        assertEquals(DecisionStatus.ADVANCE_STAGE, decision.status)
+        assertEquals(Stage.SECOND, decision.next.stage)
+        assertEquals(squat.recommendedGrams, decision.next.recommendedGrams)
+        assertEquals(squat.recommendedGrams, decision.actualWorkingGrams)
+        assertTrue(decision.reason.contains("same weight"))
+    }
+
+    @Test fun zeroWeightOnlyLeavesProgressionUnchanged() {
+        val squat = progress(Tier.T1)
+        val decision = GzclpEngine.evaluate(squat, listOf(CompletedSet(0, 0)))
+        assertEquals(DecisionStatus.SKIPPED, decision.status)
+        assertEquals(squat, decision.next)
+        assertTrue(decision.reason.contains("No valid working weight"))
+    }
+
     @Test fun rotationIsIndependentOfTrainingFrequency() {
         assertEquals(listOf(WorkoutDay.A1, WorkoutDay.B1, WorkoutDay.A2, WorkoutDay.B2, WorkoutDay.A1),
             (0..4).map(GzclpRotation::next))

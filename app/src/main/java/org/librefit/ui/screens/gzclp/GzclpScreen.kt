@@ -388,6 +388,9 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     val nextWarmup = if (ex.skipped) null else warmups.firstOrNull { !it.completed }
     val nextWorking = if (ex.skipped) null else exerciseSets.firstOrNull { !it.completed }
     val nextSet = nextWarmup ?: nextWorking
+    var workingWeightInput by remember(ex.id, ex.recommendedGrams) {
+        mutableStateOf(displayWeight(ex.recommendedGrams, unit))
+    }
     val allResolved = sorted.none { it.hasPendingWorkingSets() }
     val prior = history.asSequence().flatMap { it.exercises.asSequence() }
         .filter { it.exercise.exerciseId == ex.exerciseId && it.exercise.tier == ex.tier }
@@ -596,6 +599,20 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
                     fontWeight = FontWeight.SemiBold)
                 Text("${ex.targetSets}×${ex.targetReps}${if (ex.tier == "T2") "" else "+"} · ${displayWeight(ex.recommendedGrams, unit)} ${program.unit.lowercase()}",
                     style = MaterialTheme.typography.titleLarge)
+                if (ex.tier == "T1" && nextWorking != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(workingWeightInput, { workingWeightInput = it },
+                            label = { Text("T1 working weight (${program.unit.lowercase()})") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true, modifier = Modifier.weight(1f))
+                        val grams = workingWeightInput.toDoubleOrNull()?.let { GzclpWeights.toGrams(it, unit) }
+                        TextButton(onClick = { if (grams != null) onSaveSet(nextWorking.copy(actualGrams = grams)) },
+                            enabled = grams != null && grams > 0 && grams != ex.recommendedGrams) {
+                            Text("Apply")
+                        }
+                    }
+                }
                 if (prior != null) Text("Last: ${displayWeight(prior.actualGrams, unit)} ${program.unit.lowercase()} × ${prior.actualReps}",
                     style = MaterialTheme.typography.bodyMedium)
                 if (ex.cue.isNotBlank()) Text(ex.cue, style = MaterialTheme.typography.bodySmall)
@@ -714,6 +731,7 @@ private fun FocusedSetRow(set: GzclpSetEntity, label: String, unit: WeightUnit,
     var edit by remember(set.id) { mutableStateOf(set.amrap) }
     var reps by remember(set.id) { mutableStateOf(set.actualReps.toString()) }
     var weight by remember(set.id) { mutableStateOf(displayWeight(set.actualGrams, unit)) }
+    LaunchedEffect(set.actualGrams) { weight = displayWeight(set.actualGrams, unit) }
     var rir by remember(set.id) { mutableStateOf(set.rir) }
     var showRir by remember(set.id) { mutableStateOf(set.rir != null) }
     var saving by remember(set.id) { mutableStateOf(false) }

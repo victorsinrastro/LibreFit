@@ -52,6 +52,40 @@ class GzclpWarmupPersistenceTest {
     private suspend fun PersistenceFixture.exercise() =
         repository.getSession(sessionId)!!.exercises.single()
 
+    @Test fun t1WeightChangeBeforeWarmupsPersistsAcrossPendingSets() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        try {
+            val repo = GzclpRepository(db, db.getGzclpDao())
+            val lb = WeightUnit.LB
+            val original = GzclpWeights.toGrams(165.0, lb)
+            val chosen = GzclpWeights.toGrams(135.0, lb)
+            repo.configure(GzclpProgramEntity(unit = lb.name),
+                listOf(
+                    GzclpTemplateExerciseEntity("a1-squat", 0, 0, "squat", "Squat", "T1", "squat:T1"),
+                    GzclpTemplateExerciseEntity("a1-bench", 0, 1, "bench", "Bench", "T1", "bench:T1")),
+                listOf(
+                    GzclpProgressEntity("squat:T1", "squat", "T1", recommendedGrams = original, incrementGrams = 2_500),
+                    GzclpProgressEntity("bench:T1", "bench", "T1", recommendedGrams = original, incrementGrams = 2_500)))
+            val sessionId = repo.startSession(0)
+            val squatId = repo.getSession(sessionId)!!.exercises.first { it.exercise.exerciseId == "squat" }.exercise.id
+            repo.generateWarmups(squatId)
+            val before = repo.getSession(sessionId)!!.exercises.first { it.exercise.id == squatId }
+            val warmups = before.sets.filter { it.warmup }
+            val first = before.sets.first { !it.warmup }
+            repo.saveSet(first.copy(actualGrams = chosen))
+            val edited = repo.getSession(sessionId)!!.exercises.first { it.exercise.id == squatId }
+            assertEquals(warmups, edited.sets.filter { it.warmup })
+            assertTrue(edited.sets.filter { !it.warmup }.all { !it.completed && it.actualGrams == chosen })
+            repo.saveSet(edited.sets.first { it.id == first.id }.copy(completed = true, actualReps = 3))
+            val resumed = repo.getSession(sessionId)!!.exercises
+            val squat = resumed.first { it.exercise.id == squatId }
+            assertEquals(chosen, squat.exercise.recommendedGrams)
+            assertTrue(squat.sets.filter { !it.warmup && !it.completed }.all { it.actualGrams == chosen })
+            assertEquals(original, resumed.first { it.exercise.exerciseId == "bench" }.sets.first { !it.warmup }.actualGrams)
+        } finally { db.close() }
+    }
+
     @Test fun threeOfFiveThenSkipTwoPreservesT2AndProgression() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()

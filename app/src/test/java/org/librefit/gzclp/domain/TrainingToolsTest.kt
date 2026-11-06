@@ -28,6 +28,17 @@ class TrainingToolsTest {
         assertTrue(WarmupGenerator.generate(15_000, 20_000, inventory).isEmpty())
     }
 
+    @Test fun poundWarmupNear66RoundsTo65WithDefaultPlates() {
+        val lb = WeightUnit.LB
+        val bar = GzclpWeights.toGrams(45.0, lb)
+        val inventory = listOf(45.0, 35.0, 25.0, 10.0, 5.0, 2.5)
+            .map { Plate(GzclpWeights.toGrams(it, lb), 2) }
+        val steps = WarmupGenerator.generate(GzclpWeights.toGrams(165.0, lb), bar,
+            inventory, unit = lb)
+        assertEquals(65.0, GzclpWeights.fromGrams(steps[1].grams, lb), 0.005)
+        assertTrue(steps.all { GzclpWeights.fromGrams(it.grams, lb) % 5.0 == 0.0 })
+    }
+
     @Test fun deadlineSurvivesClockAdvancePauseAndAdjustment() {
         val timer = RestDeadline(190_000)
         assertEquals(90_000, timer.remaining(100_000))

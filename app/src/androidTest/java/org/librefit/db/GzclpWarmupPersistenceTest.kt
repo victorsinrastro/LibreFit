@@ -13,9 +13,34 @@ import org.librefit.db.entity.GzclpProgramEntity
 import org.librefit.db.entity.GzclpProgressEntity
 import org.librefit.db.entity.GzclpTemplateExerciseEntity
 import org.librefit.db.repository.GzclpRepository
+import org.librefit.gzclp.domain.GzclpWeights
+import org.librefit.gzclp.domain.WeightUnit
 
 @RunWith(AndroidJUnit4::class)
 class GzclpWarmupPersistenceTest {
+    @Test fun poundWorkingWeightsSurviveRoomSaveAndReload() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        try {
+            val repo = GzclpRepository(db, db.getGzclpDao())
+            val lb = WeightUnit.LB
+            repo.configure(GzclpProgramEntity(unit = lb.name),
+                listOf(GzclpTemplateExerciseEntity("a1-squat", 0, 0, "squat", "Squat", "T1", "squat:T1")),
+                listOf(GzclpProgressEntity("squat:T1", "squat", "T1",
+                    recommendedGrams = GzclpWeights.toGrams(90.0, lb), incrementGrams = GzclpWeights.toGrams(5.0, lb))))
+            val sessionId = repo.startSession(0)
+            val set = repo.getSession(sessionId)!!.exercises.single().sets.first { !it.warmup }
+            listOf(90.0, 67.5).forEach { pounds ->
+                repeat(3) {
+                    val current = repo.getSession(sessionId)!!.exercises.single().sets.first { it.id == set.id }
+                    repo.saveSet(current.copy(actualGrams = GzclpWeights.toGrams(pounds, lb)))
+                    val recovered = repo.getSession(sessionId)!!.exercises.single().sets.first { it.id == set.id }
+                    assertEquals(pounds, GzclpWeights.fromGrams(recovered.actualGrams, lb), 0.0)
+                }
+            }
+        } finally { db.close() }
+    }
+
     @Test fun explicitRegenerationKeepsCompletedWarmupsAndWorkingSets() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()

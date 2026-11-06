@@ -1,6 +1,7 @@
 package org.librefit.gzclp.domain
 
 import kotlin.math.roundToLong
+import kotlin.math.abs
 
 enum class Tier { T1, T2, T3 }
 enum class Stage { FIRST, SECOND, THIRD }
@@ -12,8 +13,15 @@ object GzclpWeights {
     fun toGrams(value: Double, unit: WeightUnit): Long =
         (value * if (unit == WeightUnit.KG) 1000.0 else 453.59237).roundToLong()
 
-    fun fromGrams(grams: Long, unit: WeightUnit): Double =
-        grams / if (unit == WeightUnit.KG) 1000.0 else 453.59237
+    fun fromGrams(grams: Long, unit: WeightUnit): Double {
+        if (unit == WeightUnit.KG) return grams / 1000.0
+        val pounds = grams / 453.59237
+        val nearestHalfPound = (pounds * 2).roundToLong() / 2.0
+        // A whole-gram store and summed, separately rounded plates can differ by a
+        // few grams from a nominal half-pound load.
+        return if (abs(pounds - nearestHalfPound) <= 0.005)
+            nearestHalfPound else pounds
+    }
 
     fun roundToIncrement(grams: Long, incrementGrams: Long): Long {
         require(incrementGrams > 0)

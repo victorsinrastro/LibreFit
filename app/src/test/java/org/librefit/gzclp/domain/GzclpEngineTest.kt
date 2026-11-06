@@ -71,6 +71,20 @@ class GzclpEngineTest {
         assertEquals(45_500, GzclpWeights.roundToIncrement(pounds, 500))
     }
 
+    @Test fun poundLoadsSurviveRepeatedWholeGramConversions() {
+        listOf(90.0, 67.5).forEach { pounds ->
+            var storedGrams = GzclpWeights.toGrams(pounds, WeightUnit.LB)
+            repeat(10) {
+                val recovered = GzclpWeights.fromGrams(storedGrams, WeightUnit.LB)
+                assertEquals(pounds, recovered, 0.0)
+                storedGrams = GzclpWeights.toGrams(recovered, WeightUnit.LB)
+            }
+        }
+        assertEquals(90.25,
+            GzclpWeights.fromGrams(GzclpWeights.toGrams(90.25, WeightUnit.LB), WeightUnit.LB),
+            0.005)
+    }
+
     @Test fun unfinishedAndAlreadyAppliedSessionsDoNotAdvance() {
         val exercise = SessionExerciseResult(progress(Tier.T1), sets(5, 3), attempted = true)
         assertFalse(GzclpSessionProgression.evaluate(listOf(exercise), false, false).applied)

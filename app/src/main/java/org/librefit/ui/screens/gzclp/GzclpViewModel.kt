@@ -258,6 +258,22 @@ class GzclpViewModel @Inject constructor(
             ))
         }
 
+    private fun updateActiveTimer(
+        fallbackMessage: String,
+        update: suspend (Long) -> Unit
+    ) = viewModelScope.launch {
+        val id = active.value?.session?.id ?: return@launch
+        try { sessionEditMutex.withLock { update(id) }; clearError() }
+        catch (e: Exception) { error.value = e.message ?: fallbackMessage }
+    }
+
+    fun pauseSessionTimer() = updateActiveTimer("Timer could not be paused.") { repository.pauseSessionTimer(it) }
+
+    fun resumeSessionTimer() = updateActiveTimer("Timer could not be resumed.") { repository.resumeSessionTimer(it) }
+
+    fun resolveSessionTimer(activeMinutes: Long) =
+        updateActiveTimer("Duration could not be saved.") { repository.resolveSessionTimer(it, activeMinutes) }
+
     fun generateWarmups(exercise: GzclpSessionExerciseEntity): kotlinx.coroutines.Job = runSessionEdit(
         onSuccess = { clearError() },
         onFailure = { e -> recoverableError("Warm-ups were not generated. ${e.message.orEmpty()}",

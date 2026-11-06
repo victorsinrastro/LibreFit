@@ -2,6 +2,7 @@
 package org.librefit.gzclp.domain
 
 import kotlin.math.abs
+import kotlin.math.roundToLong
 
 data class Plate(val grams: Long, val count: Int)
 data class PlateLoading(val perSide: List<Plate>, val actualGrams: Long, val differenceGrams: Long)
@@ -36,13 +37,19 @@ data class WarmupStep(val grams: Long, val reps: Int)
 object WarmupGenerator {
     fun generate(
         targetGrams: Long, barGrams: Long, inventory: List<Plate>,
-        template: List<Pair<Int, Int>> = listOf(40 to 5, 60 to 3, 80 to 2)
+        template: List<Pair<Int, Int>> = listOf(40 to 5, 60 to 3, 80 to 2),
+        unit: WeightUnit = WeightUnit.KG,
     ): List<WarmupStep> {
         if (targetGrams <= barGrams || barGrams <= 0) return emptyList()
         val result = mutableListOf(WarmupStep(barGrams, 5))
         template.forEach { (percent, reps) ->
             require(percent in 1..99 && reps > 0)
-            val desired = (targetGrams * percent / 100).coerceAtLeast(barGrams)
+            val percentageLoad = (targetGrams * percent / 100).coerceAtLeast(barGrams)
+            val desired = if (unit == WeightUnit.LB)
+                GzclpWeights.toGrams(
+                    (GzclpWeights.fromGrams(percentageLoad, unit) / 5.0).roundToLong() * 5.0,
+                    unit).coerceAtLeast(barGrams)
+            else percentageLoad
             val actual = PlateCalculator.calculate(desired, barGrams, inventory).actualGrams
             if (actual < targetGrams && actual > result.last().grams)
                 result += WarmupStep(actual, reps)

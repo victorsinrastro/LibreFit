@@ -364,7 +364,8 @@ class GzclpRepository @Inject constructor(
         }
         val completed = existing.filter { it.completed }
         val occupied = completed.map { it.position }.toMutableSet()
-        WarmupGenerator.generate(item.exercise.recommendedGrams, program.barGrams, inventory, template)
+        WarmupGenerator.generate(item.exercise.recommendedGrams, program.barGrams, inventory, template,
+            WeightUnit.valueOf(program.unit))
             .drop(completed.size).forEachIndexed { index, step ->
                 val position = (-100 + completed.size + index).let { preferred ->
                     if (preferred !in occupied) preferred

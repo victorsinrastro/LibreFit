@@ -115,6 +115,28 @@ class GzclpWarmupPersistenceTest {
         } finally { db.close() }
     }
 
+    @Test fun activeSessionResumesWithoutDuplicationOrCompletion() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        try {
+            val repo = GzclpRepository(db, db.getGzclpDao())
+            repo.configure(GzclpProgramEntity(),
+                listOf(GzclpTemplateExerciseEntity("a1-squat", 0, 0, "squat", "Squat", "T1", "squat:T1")),
+                listOf(GzclpProgressEntity("squat:T1", "squat", "T1", recommendedGrams = 60_000,
+                    incrementGrams = 5_000)))
+            val sessionId = repo.startSession(0)
+            val first = repo.getSession(sessionId)!!.exercises.single().sets.first()
+            repo.saveSet(first.copy(completed = true, actualReps = 3, actualGrams = 55_000))
+            // Leaving the screen makes no repository mutation. Starting again returns the active session.
+            assertEquals(sessionId, repo.startSession(0))
+            val resumed = repo.getSession(sessionId)!!
+            assertEquals("ACTIVE", resumed.session.status)
+            assertTrue(!resumed.session.progressionApplied)
+            assertEquals(55_000, resumed.exercises.single().sets.first { it.id == first.id }.actualGrams)
+            assertTrue(resumed.exercises.single().sets.first { it.id == first.id }.completed)
+        } finally { db.close() }
+    }
+
     @Test fun poundWorkingWeightsSurviveRoomSaveAndReload() = withFixture(
         unit = WeightUnit.LB,
         recommendedGrams = GzclpWeights.toGrams(90.0, WeightUnit.LB),

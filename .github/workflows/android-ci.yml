@@ -48,7 +48,6 @@ jobs:
           path: |
             app/build/reports/lint-results-debug.xml
             app/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/**/*.class
-            app/build/tmp/kotlin-classes/debug/**/*.class
           if-no-files-found: error
           retention-days: 1
           overwrite: true
@@ -103,7 +102,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f app/build/reports/lint-results-debug.xml
-          test -d app/build/tmp/kotlin-classes/debug
+          test -d app/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes
 
       - name: Verify SonarQube token
         env:

@@ -195,18 +195,27 @@ class GzclpViewModel @Inject constructor(
             recoverableError("Set was not saved. ${e.message.orEmpty()}", "Retry save") { saveSet(set) }
         }
     }
-    private fun runSessionEdit(
+    private fun runEdit(
         fallbackMessage: String? = null,
         onSuccess: () -> Unit = {},
-        onFailure: (Exception) -> Unit = { exception ->
-            error.value = exception.message ?: fallbackMessage
-        },
+        onFailure: ((Exception) -> Unit)? = null,
         update: suspend () -> Unit
     ) = viewModelScope.launch {
         try {
-            sessionEditMutex.withLock { update() }
+            update()
             onSuccess()
-        } catch (e: Exception) { onFailure(e) }
+        } catch (e: Exception) {
+            onFailure?.invoke(e) ?: run { error.value = e.message ?: fallbackMessage }
+        }
+    }
+
+    private fun runSessionEdit(
+        fallbackMessage: String? = null,
+        onSuccess: () -> Unit = {},
+        onFailure: ((Exception) -> Unit)? = null,
+        update: suspend () -> Unit
+    ) = runEdit(fallbackMessage, onSuccess, onFailure) {
+        sessionEditMutex.withLock { update() }
     }
 
     fun saveExercise(exercise: GzclpSessionExerciseEntity) =
@@ -222,10 +231,11 @@ class GzclpViewModel @Inject constructor(
             error.value = null
         }
     fun replaceFutureExercise(templateId: String, replacementId: String,
-        replacementName: String, startingGrams: Long) = viewModelScope.launch {
-        try { repository.replaceTemplateExercise(templateId, replacementId, replacementName, startingGrams);
-            error.value = null }
-        catch (e: Exception) { error.value = e.message ?: "Program exercise could not be changed." }
+        replacementName: String, startingGrams: Long) = runEdit(
+        fallbackMessage = "Program exercise could not be changed.",
+        onSuccess = { error.value = null }
+    ) {
+        repository.replaceTemplateExercise(templateId, replacementId, replacementName, startingGrams)
     }
     fun saveSession(session: GzclpSessionEntity): kotlinx.coroutines.Job = viewModelScope.launch {
         try {

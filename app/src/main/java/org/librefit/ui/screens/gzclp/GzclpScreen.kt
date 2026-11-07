@@ -187,6 +187,9 @@ private fun displayVolume(sets: List<GzclpSetEntity>, unit: WeightUnit): String 
 private fun weightUnit(program: GzclpProgramEntity): WeightUnit =
     runCatching { WeightUnit.valueOf(program.unit) }.getOrDefault(WeightUnit.KG)
 
+private fun GzclpExerciseWithSets.hasPendingWorkingSets() =
+    !exercise.skipped && sets.any { !it.warmup && !it.completed }
+
 @Composable
 private fun Onboarding(draft: GzclpOnboardingDraft,
     onDraft: (GzclpOnboardingDraft) -> Unit,
@@ -375,7 +378,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     val sorted = details.exercises.sortedBy { it.exercise.position }
     val working = sorted.flatMap { it.sets }.filterNot { it.warmup }
     val completed = working.count { it.completed }
-    val unresolved = sorted.firstOrNull { !it.exercise.skipped && it.sets.any { set -> !set.warmup && !set.completed } }
+    val unresolved = sorted.firstOrNull { it.hasPendingWorkingSets() }
     var chosenId by rememberSaveable { mutableLongStateOf(0L) }
     val current = sorted.firstOrNull { it.exercise.id == chosenId } ?: unresolved ?: sorted.firstOrNull()
     val item = current ?: return
@@ -385,7 +388,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     val nextWarmup = if (ex.skipped) null else warmups.firstOrNull { !it.completed }
     val nextWorking = if (ex.skipped) null else exerciseSets.firstOrNull { !it.completed }
     val nextSet = nextWarmup ?: nextWorking
-    val allResolved = sorted.all { it.exercise.skipped || it.sets.none { set -> !set.warmup && !set.completed } }
+    val allResolved = sorted.none { it.hasPendingWorkingSets() }
     val prior = history.asSequence().flatMap { it.exercises.asSequence() }
         .filter { it.exercise.exerciseId == ex.exerciseId && it.exercise.tier == ex.tier }
         .mapNotNull { past -> past.sets.filter { it.completed && !it.warmup }.maxByOrNull { it.position } }
@@ -613,8 +616,9 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
                 }
                 SkipSetButton("Skip remaining working sets", busy) {
                     onSkipPendingWorkingSets(ex)
-                    chosenId = sorted.firstOrNull { other -> other.exercise.position > ex.position &&
-                        !other.exercise.skipped && other.sets.any { !it.warmup && !it.completed } }
+                    chosenId = sorted.firstOrNull { other ->
+                        other.exercise.position > ex.position && other.hasPendingWorkingSets()
+                    }
                         ?.exercise?.id ?: chosenId
                 }
             }

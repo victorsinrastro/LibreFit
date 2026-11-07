@@ -64,6 +64,12 @@ data class ProgressionDecision(
     val actualWorkingGrams: Long? = null,
 )
 
+private fun skippedDecision(
+    progress: LiftProgress,
+    reason: String,
+    actualWorkingGrams: Long? = null,
+) = ProgressionDecision(DecisionStatus.SKIPPED, progress, reason, actualWorkingGrams)
+
 object GzclpEngine {
     fun prescription(tier: Tier, stage: Stage = Stage.FIRST): Prescription = when (tier) {
         Tier.T1 -> when (stage) {
@@ -86,9 +92,9 @@ object GzclpEngine {
         if (progress.pendingReset) return ProgressionDecision(
             DecisionStatus.RESET_REQUIRED, progress, "Record a new five-rep max to restart this lift."
         )
-        if (working.isEmpty()) return ProgressionDecision(DecisionStatus.SKIPPED, progress, "Exercise skipped.")
-        if (sets.count { !it.isWarmup } < target.sets) return ProgressionDecision(
-            DecisionStatus.SKIPPED, progress,
+        if (working.isEmpty()) return skippedDecision(progress, "Exercise skipped.")
+        if (sets.count { !it.isWarmup } < target.sets) return skippedDecision(
+            progress,
             "Partial exercise: remaining working sets were skipped; progression unchanged.",
             working.lastOrNull { it.weightGrams > 0 }?.weightGrams)
         val actualLoad = working.last().weightGrams
@@ -173,7 +179,7 @@ object GzclpSessionProgression {
         if (!finished || progressionAlreadyApplied) return SessionProgressionResult(emptyList(), false)
         return SessionProgressionResult(exercises.map { exercise ->
             if (exercise.attempted) GzclpEngine.evaluate(exercise.progress, exercise.sets)
-            else ProgressionDecision(DecisionStatus.SKIPPED, exercise.progress, "Exercise skipped.")
+            else skippedDecision(exercise.progress, "Exercise skipped.")
         }, true)
     }
 }

@@ -335,9 +335,13 @@ class GzclpRepository @Inject constructor(
         if (owner?.status == "COMPLETED") dao.upsertSession(owner.copy(historicalCorrection = true))
     }
 
-    suspend fun skipPendingWarmups(exerciseId: Long) = database.withTransaction {
+    suspend fun skipPendingWarmups(exerciseId: Long) = skipPendingSets(exerciseId, warmup = true)
+
+    suspend fun skipPendingWorkingSets(exerciseId: Long) = skipPendingSets(exerciseId, warmup = false)
+
+    private suspend fun skipPendingSets(exerciseId: Long, warmup: Boolean) = database.withTransaction {
         val exercise = activeExercise(exerciseId)
-        exercise.sets.filter { it.warmup && !it.completed }.forEach { dao.deleteSet(it.id) }
+        exercise.sets.filter { it.warmup == warmup && !it.completed }.forEach { dao.deleteSet(it.id) }
     }
 
     suspend fun generateWarmups(exerciseId: Long, replacePending: Boolean = false) = database.withTransaction {

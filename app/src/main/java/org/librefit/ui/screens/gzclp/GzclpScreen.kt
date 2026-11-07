@@ -145,6 +145,7 @@ fun GzclpScreen(navController: NavHostController, viewModel: GzclpViewModel = hi
                     viewModel::saveSet, viewModel::saveExercise, viewModel::saveSession,
                     viewModel::addWarmup, viewModel::generateWarmups, viewModel::replacePendingWarmups,
                     viewModel::skipPendingWarmups,
+                    viewModel::skipPendingWorkingSets,
                     viewModel::addWorkingSet, viewModel::deleteSet, viewModel::moveSet,
                     viewModel::substituteSession, viewModel::undoSessionSubstitution,
                     viewModel::replaceFutureExercise,
@@ -185,6 +186,9 @@ private fun displayVolume(sets: List<GzclpSetEntity>, unit: WeightUnit): String 
 
 private fun weightUnit(program: GzclpProgramEntity): WeightUnit =
     runCatching { WeightUnit.valueOf(program.unit) }.getOrDefault(WeightUnit.KG)
+
+private fun GzclpExerciseWithSets.hasPendingWorkingSets() =
+    !exercise.skipped && sets.any { !it.warmup && !it.completed }
 
 @Composable
 private fun Onboarding(draft: GzclpOnboardingDraft,
@@ -336,6 +340,7 @@ private fun ActiveWorkout(details: GzclpSessionWithDetails, program: GzclpProgra
     onGenerateWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onReplacePendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onSkipPendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
+    onSkipPendingWorkingSets: (GzclpSessionExerciseEntity) -> Unit,
     onAddWorkingSet: (GzclpSessionExerciseEntity) -> Unit,
     onDeleteSet: (Long) -> Unit, onMoveSet: (GzclpSetEntity, Int) -> Unit,
     onSubstituteSession: (Long, String, String, Long) -> Unit,
@@ -345,7 +350,8 @@ private fun ActiveWorkout(details: GzclpSessionWithDetails, program: GzclpProgra
     onAbandon: () -> Unit) {
     FocusedWorkout(details, program, templates, progress, history, busy, onSaveSet,
         onSaveExercise, onSaveSession, onAddWarmup, onGenerateWarmups,
-        onReplacePendingWarmups, onSkipPendingWarmups, onAddWorkingSet, onDeleteSet, onMoveSet,
+        onReplacePendingWarmups, onSkipPendingWarmups, onSkipPendingWorkingSets,
+        onAddWorkingSet, onDeleteSet, onMoveSet,
         onSubstituteSession, onUndoSubstitution, onReplaceFuture, onFinish, onAbandon)
 }
 
@@ -361,6 +367,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     onGenerateWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onReplacePendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onSkipPendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
+    onSkipPendingWorkingSets: (GzclpSessionExerciseEntity) -> Unit,
     onAddWorkingSet: (GzclpSessionExerciseEntity) -> Unit,
     onDeleteSet: (Long) -> Unit, onMoveSet: (GzclpSetEntity, Int) -> Unit,
     onSubstituteSession: (Long, String, String, Long) -> Unit,
@@ -371,7 +378,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     val sorted = details.exercises.sortedBy { it.exercise.position }
     val working = sorted.flatMap { it.sets }.filterNot { it.warmup }
     val completed = working.count { it.completed }
-    val unresolved = sorted.firstOrNull { !it.exercise.skipped && it.sets.any { set -> !set.warmup && !set.completed } }
+    val unresolved = sorted.firstOrNull { it.hasPendingWorkingSets() }
     var chosenId by rememberSaveable { mutableLongStateOf(0L) }
     val current = sorted.firstOrNull { it.exercise.id == chosenId } ?: unresolved ?: sorted.firstOrNull()
     val item = current ?: return
@@ -381,7 +388,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     val nextWarmup = if (ex.skipped) null else warmups.firstOrNull { !it.completed }
     val nextWorking = if (ex.skipped) null else exerciseSets.firstOrNull { !it.completed }
     val nextSet = nextWarmup ?: nextWorking
-    val allResolved = sorted.all { it.exercise.skipped || it.sets.none { set -> !set.warmup && !set.completed } }
+    val allResolved = sorted.none { it.hasPendingWorkingSets() }
     val prior = history.asSequence().flatMap { it.exercises.asSequence() }
         .filter { it.exercise.exerciseId == ex.exerciseId && it.exercise.tier == ex.tier }
         .mapNotNull { past -> past.sets.filter { it.completed && !it.warmup }.maxByOrNull { it.position } }
@@ -595,9 +602,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
             }
             if (nextWarmup != null) item {
                 FocusedSetRow(nextWarmup, "Warm-up W${warmups.indexOf(nextWarmup) + 1}", unit, onSaveSet) {}
-                TextButton(onClick = { onSkipPendingWarmups(ex) }, enabled = !busy) {
-                    Text("Skip pending warm-ups")
-                }
+                SkipSetButton("Skip pending warm-ups", busy) { onSkipPendingWarmups(ex) }
             } else if (nextWorking != null) item {
                 FocusedSetRow(nextWorking, "Working set ${exerciseSets.indexOf(nextWorking) + 1}${if (nextWorking.amrap) " · AMRAP" else ""}",
                     unit, onSaveSet) {
@@ -608,6 +613,13 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
                     if (program.autoRest && seconds > 0 && hasAnother)
                         onSaveSession(details.session.copy(restDeadlineMillis = System.currentTimeMillis() + seconds * 1000L,
                             restPausedMillis = 0))
+                }
+                SkipSetButton("Skip remaining working sets", busy) {
+                    onSkipPendingWorkingSets(ex)
+                    chosenId = sorted.firstOrNull { other ->
+                        other.exercise.position > ex.position && other.hasPendingWorkingSets()
+                    }
+                        ?.exercise?.id ?: chosenId
                 }
             }
             item {
@@ -630,7 +642,11 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
             }
             item {
                 Text("Working sets", style = MaterialTheme.typography.titleMedium)
-                if (nextWorking == null) Text(if (ex.skipped) "Exercise skipped" else "All working sets recorded.")
+                if (nextWorking == null) Text(when {
+                    ex.skipped -> "Exercise skipped"
+                    exerciseSets.size < ex.targetSets -> "${ex.targetSets - exerciseSets.size} working sets omitted."
+                    else -> "All working sets recorded."
+                })
                 exerciseSets.forEachIndexed { index, set ->
                     if (set.completed) CompactCompletedSet("${index + 1}${if (set.amrap) " · AMRAP" else ""}", set, unit) {
                         onSaveSet(set.copy(completed = false))
@@ -674,6 +690,11 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
             }
         }
     }
+}
+
+@Composable
+private fun SkipSetButton(label: String, busy: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = !busy) { Text(label) }
 }
 
 @Composable

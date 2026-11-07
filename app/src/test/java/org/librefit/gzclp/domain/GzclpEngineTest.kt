@@ -57,6 +57,17 @@ class GzclpEngineTest {
         assertEquals(p, GzclpEngine.evaluate(p, emptyList()).next)
     }
 
+    @Test fun omittedWorkingRowsLeavePartialProgressionUnchanged() {
+        val squat = progress(Tier.T1)
+        val decision = GzclpEngine.evaluate(squat, sets(3, 3))
+        assertEquals(DecisionStatus.SKIPPED, decision.status)
+        assertEquals(squat, decision.next)
+        assertTrue(decision.reason.contains("Partial exercise"))
+        assertEquals(DecisionStatus.ADVANCE_STAGE,
+            GzclpEngine.evaluate(squat, sets(3, 3) +
+                listOf(CompletedSet(0, 60_000, isComplete = false), CompletedSet(0, 60_000, isComplete = false))).status)
+    }
+
     @Test fun rotationIsIndependentOfTrainingFrequency() {
         assertEquals(listOf(WorkoutDay.A1, WorkoutDay.B1, WorkoutDay.A2, WorkoutDay.B2, WorkoutDay.A1),
             (0..4).map(GzclpRotation::next))

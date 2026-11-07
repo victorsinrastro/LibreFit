@@ -20,8 +20,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
 import org.librefit.db.repository.UserPreferencesRepository
+import org.librefit.db.repository.GzclpRepository
 import org.librefit.nav.NavigationHost
 import org.librefit.services.WorkoutServiceManager
 import org.librefit.ui.theme.LibreFitTheme
@@ -34,6 +37,19 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var workoutServiceManager: WorkoutServiceManager
+
+    @Inject
+    lateinit var gzclpRepository: GzclpRepository
+
+    override fun onStart() {
+        super.onStart()
+        if (!isChangingConfigurations) lifecycleScope.launch { gzclpRepository.noteAppVisibility(true) }
+    }
+
+    override fun onStop() {
+        if (!isChangingConfigurations) lifecycleScope.launch { gzclpRepository.noteAppVisibility(false) }
+        super.onStop()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()

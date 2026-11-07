@@ -13,6 +13,48 @@ import org.junit.runner.RunWith
 /** Builds the exported version 4 schema, then runs the complete non-destructive migration chain. */
 @RunWith(AndroidJUnit4::class)
 class GzclpMigrationTest {
+    @Test fun versionEightTrainingDataSurvivesLedgerMigrationWithoutInventedSetTimes() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext
+        val name = "training-v8-${System.nanoTime()}.db"
+        val schema = JSONObject(instrumentation.context.assets.open("gzclp-v8-schema.json")
+            .bufferedReader().use { it.readText() }).getJSONObject("database")
+        val file = app.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        try {
+            SQLiteDatabase.openOrCreateDatabase(file, null).use { sqlite ->
+                val entities = schema.getJSONArray("entities")
+                for (i in 0 until entities.length()) {
+                    val entity = entities.getJSONObject(i)
+                    val table = entity.getString("tableName")
+                    sqlite.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}", table))
+                    val indices = entity.optJSONArray("indices") ?: continue
+                    for (j in 0 until indices.length()) sqlite.execSQL(indices.getJSONObject(j)
+                        .getString("createSql").replace("${'$'}{TABLE_NAME}", table))
+                }
+                sqlite.execSQL("INSERT INTO gzclp_program VALUES (1,'LB',3,2,180,120,90,1,20412,'','',1000)")
+                sqlite.execSQL("INSERT INTO gzclp_sessions VALUES (41,0,'COMPLETED',1000,2000,'',0,0,1,0)")
+                sqlite.execSQL("INSERT INTO gzclp_session_exercises VALUES (42,41,'squat','squat:T1','squat','Squat','T1','FIRST',0,60000,5,3,'','',0,0,'',65000,'FIRST',5000,60000,0)")
+                sqlite.execSQL("INSERT INTO gzclp_sets VALUES (43,42,0,3,4,60000,60000,1,0,0,NULL)")
+                val setup = schema.getJSONArray("setupQueries")
+                for (i in 0 until setup.length()) sqlite.execSQL(setup.getString(i))
+                sqlite.version = 8
+            }
+            val migrated = Room.databaseBuilder(app, AppDatabase::class.java, name)
+                .addMigrations(AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10).build()
+            try {
+                migrated.openHelper.writableDatabase.query("SELECT actualReps, completedAtMillis FROM gzclp_sets WHERE id=43")
+                    .use { cursor ->
+                        assertTrue(cursor.moveToFirst())
+                        assertEquals(4, cursor.getInt(0))
+                        assertTrue(cursor.isNull(1))
+                    }
+                migrated.openHelper.writableDatabase.query("SELECT workoutIndex FROM training_plans WHERE status='READY'")
+                    .use { cursor -> assertTrue(cursor.moveToFirst()); assertEquals(2, cursor.getInt(0)) }
+            } finally { migrated.close() }
+        } finally { app.deleteDatabase(name) }
+    }
+
     @Test fun legacyWorkoutSurvivesGzclpMigration() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
@@ -45,7 +87,7 @@ class GzclpMigrationTest {
             val migrated = Room.databaseBuilder(app, AppDatabase::class.java, name)
                 .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_5_6,
                     AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8,
-                    AppDatabase.MIGRATION_8_9)
+                    AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10)
                 .build()
             try {
                     migrated.openHelper.writableDatabase.query(

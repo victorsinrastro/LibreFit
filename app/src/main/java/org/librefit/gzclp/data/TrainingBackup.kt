@@ -13,19 +13,21 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.librefit.db.AppDatabase
 
-/** Version 1 is a snapshot of user tables. Restore is all-or-nothing. */
+/** Version 2 includes the first-party training ledger and custom observations. */
 class TrainingBackup @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: AppDatabase
 ) {
     private val tables = listOf("dataset", "workouts", "exercises", "sets", "measurements",
         "gzclp_program", "gzclp_template_exercises", "gzclp_progress", "gzclp_sessions",
-        "gzclp_session_exercises", "gzclp_sets")
+        "gzclp_session_exercises", "gzclp_sets", "training_events",
+        "training_measurement_definitions", "training_measurements", "training_blocks",
+        "training_plans")
 
     suspend fun export(uri: Uri) {
         val document = database.withTransaction {
             val body = JSONObject().put("format", "librefit-training-backup")
-                .put("version", 1).put("roomVersion", 8)
+                .put("version", 2).put("roomVersion", 9)
             val data = JSONObject()
             tables.forEach { table ->
                 val rows = JSONArray()
@@ -97,6 +99,11 @@ class TrainingBackup @Inject constructor(
             tables.asReversed().forEach { db.execSQL("DELETE FROM $it") }
             tables.forEach { table ->
                 val rows = data.getJSONArray(table)
+                val blobColumns = mutableSetOf<String>()
+                db.query("PRAGMA table_info($table)").use { columns ->
+                    while (columns.moveToNext()) if (columns.getString(2).contains("BLOB", ignoreCase = true))
+                        blobColumns += columns.getString(1)
+                }
                 for (index in 0 until rows.length()) {
                     val row = rows.getJSONObject(index)
                     val values = ContentValues()
@@ -106,8 +113,9 @@ class TrainingBackup @Inject constructor(
                             is Int -> values.put(key, value)
                             is Long -> values.put(key, value)
                             is Double -> values.put(key, value)
-                            is String -> if (value.startsWith("base64:"))
+                            is String -> if (key in blobColumns && value.startsWith("base64:"))
                                 values.put(key, Base64.decode(value.removePrefix("base64:"), Base64.DEFAULT))
+                                else if (key in blobColumns) error("Invalid blob for $table.$key")
                                 else values.put(key, value)
                             else -> error("Invalid value for $table.$key")
                         }
@@ -115,17 +123,26 @@ class TrainingBackup @Inject constructor(
                     check(db.insert(table, android.database.sqlite.SQLiteDatabase.CONFLICT_ABORT, values) != -1L)
                 }
             }
+            if (data.getJSONArray("training_blocks").length() == 0 &&
+                data.getJSONArray("gzclp_program").length() > 0) {
+                db.execSQL("INSERT INTO training_blocks (id,programId,startedAtMillis,endedAtMillis,firstWorkoutIndex,rotationJson,initialProgramJson,provenance) SELECT 'restored-legacy-block-1',id,createdAt,NULL,nextWorkoutIndex,'[0,1,2,3]',NULL,'LEGACY' FROM gzclp_program")
+                db.execSQL("INSERT INTO training_plans (id,blockId,workoutIndex,createdAtMillis,startedAtMillis,completedAtMillis,sessionId,status,templateSnapshotJson,progressionSnapshotJson,provenance) SELECT 'restored-legacy-plan-1','restored-legacy-block-1',p.nextWorkoutIndex,NULL,s.startedAt,NULL,s.id,CASE WHEN s.id IS NULL THEN 'READY' ELSE 'STARTED' END,NULL,NULL,'LEGACY' FROM gzclp_program p LEFT JOIN gzclp_sessions s ON s.id=(SELECT id FROM gzclp_sessions WHERE status='ACTIVE' ORDER BY startedAt DESC LIMIT 1)")
+            }
         }
     }
 
     private fun parse(document: String): JSONObject {
         require(document.length <= 50_000_000) { "Backup is too large" }
         val root = JSONObject(document)
-        require(root.optString("format") == "librefit-training-backup" && root.optInt("version") == 1) {
+        val version = root.optInt("version")
+        require(root.optString("format") == "librefit-training-backup" && version in 1..2) {
             "Unsupported backup format"
         }
-        require(root.optInt("roomVersion") in 7..8) { "This backup uses an incompatible database version" }
+        require(root.optInt("roomVersion") in 7..9 && (version != 2 || root.optInt("roomVersion") == 9)) {
+            "This backup uses an incompatible database version"
+        }
         val data = root.getJSONObject("tables")
+        if (version == 1) tables.drop(11).forEach { data.put(it, JSONArray()) }
         val db = database.openHelper.readableDatabase
         tables.forEach { table ->
             val allowed = mutableSetOf<String>()
@@ -139,10 +156,37 @@ class TrainingBackup @Inject constructor(
                 require(row.keys().asSequence().all { it in allowed }) { "Unknown $table column" }
                 val idKey = if (table == "gzclp_progress") "progressionKey" else if (table == "gzclp_template_exercises") "id" else "id"
                 if (row.has(idKey)) require(identities.add(row.get(idKey).toString())) { "Duplicate $table record" }
-                listOf("recommendedGrams", "incrementGrams", "targetGrams", "actualGrams", "barGrams")
-                    .forEach { field -> if (row.has(field)) require(row.getLong(field) >= 0) { "Invalid weight" } }
+                row.keys().forEach { field ->
+                    if (field.endsWith("Grams") && !row.isNull(field))
+                        require(row.opt(field) is Number && row.getLong(field) >= 0) { "Invalid $table.$field" }
+                }
             }
         }
+        val sessionIds = ids(data, "gzclp_sessions")
+        val exerciseIds = ids(data, "gzclp_session_exercises")
+        val blockIds = ids(data, "training_blocks")
+        val definitionIds = ids(data, "training_measurement_definitions")
+        require(references(data, "gzclp_session_exercises", "sessionId", sessionIds)) { "Exercise without workout" }
+        require(references(data, "gzclp_sets", "sessionExerciseId", exerciseIds)) { "Set without exercise" }
+        require(references(data, "training_plans", "blockId", blockIds)) { "Plan without block" }
+        require(references(data, "training_plans", "sessionId", sessionIds, nullable = true)) { "Plan without workout" }
+        require(references(data, "training_measurements", "definitionId", definitionIds)) {
+            "Observation without definition"
+        }
         return data
+    }
+
+    private fun ids(data: JSONObject, table: String): Set<String> {
+        val rows = data.getJSONArray(table)
+        return (0 until rows.length()).map { rows.getJSONObject(it).get("id").toString() }.toSet()
+    }
+
+    private fun references(data: JSONObject, table: String, field: String, targets: Set<String>,
+        nullable: Boolean = false): Boolean {
+        val rows = data.getJSONArray(table)
+        return (0 until rows.length()).all { index ->
+            val row = rows.getJSONObject(index)
+            if (row.isNull(field)) nullable else row.get(field).toString() in targets
+        }
     }
 }

@@ -43,6 +43,9 @@ class TrainingBackupTest {
             assertEquals(1, database.getGzclpDao().program()!!.nextWorkoutIndex)
             assertEquals(next, database.getGzclpDao().progress("squat:T1")!!.recommendedGrams)
             assertEquals(before, repo.getSession(id))
+            assertEquals(1, database.getTrainingDataDao().currentBlock()!!.programId)
+            assertEquals(1, database.getTrainingDataDao().readyPlan()!!.workoutIndex)
+            assertTrue(database.getTrainingDataDao().eventsForSession(id).any { it.kind == "SESSION_COMPLETED" })
         } finally { database.close(); file.delete() }
     }
 

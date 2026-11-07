@@ -1,9 +1,23 @@
 # Training backup format
 
-The app exports a UTF-8 JSON document through Android's document picker. Format version 1 contains `format: "librefit-training-backup"`, `version: 1`, `roomVersion: 8`, and a `tables` object. Each table is an array of rows whose keys are the Room column names. Weight fields are integer grams. Timestamps are Unix milliseconds. Binary SQLite values, if any, use a `base64:` prefix.
+The app exports a UTF-8 JSON document through Android's document picker. The current backup has
+`format: "librefit-training-backup"`, `version: 2`, `roomVersion: 9`, and a `tables` object. Each
+table contains an array of raw database rows. Integer load fields are grams. New timestamp fields
+are UTC Unix milliseconds; null means the time was not recorded. Binary SQLite values use a
+`base64:` prefix and are decoded only for BLOB columns.
 
-Version 1 includes LibreFit's workout, exercise, set, measurement, and exercise dataset tables, plus all GZCLP program, template, progression, session, exercise, and set tables. The backup is local and contains no account credentials.
+Version 2 includes generic LibreFit data, GZCLP program and workout data, training blocks and
+plans, revisions, custom measurement definitions, and external observations. It is a complete
+restore format, including revision history. The separate [analysis ZIP](TRAINING_DATA_SYSTEM.md)
+is optimized for reading and joining data, not restoration.
 
-Restore accepts version 1 from Room schemas 7 and 8. Schema 7 backups lack nullable progression-replay baselines; those historical sessions remain viewable, and replay reports that their baseline cannot be inferred safely. It validates table names, column names, duplicate primary keys, and nonnegative GZCLP weights before opening a transaction. Within the transaction it replaces the listed tables in dependency order. A failed insert rolls back the transaction and leaves the prior database intact. Future schema changes must add a backup migration before accepting older backup versions.
+Restore accepts version 1 backups from database schemas 7 and 8, as well as version 2 from schema
+9. Version 1 has no set-action timestamps or revision history; restore leaves those fields unknown
+and creates a legacy block and next-session plan. It never fabricates historical events. Schema 7
+backups lack nullable progression-replay baselines, so replay reports that it cannot safely infer
+them. Restore validates structure, column names, duplicate primary keys, and nonnegative loads
+before opening a transaction. All deletes and inserts occur in one transaction; a failure rolls
+back to the prior database.
 
-CSV export is a separate, human-readable log of completed GZCLP sets. Its weight column is always in grams; it is not a restorable backup.
+The older workout CSV is a small human-readable list of completed sets. It is not a backup and
+does not include the complete event history. Use the analysis ZIP for longitudinal analysis.

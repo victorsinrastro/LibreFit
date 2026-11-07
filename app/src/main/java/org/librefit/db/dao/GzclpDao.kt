@@ -77,7 +77,10 @@ interface GzclpDao {
     suspend fun upsertExercise(value: GzclpSessionExerciseEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertSet(value: GzclpSetEntity)
+    suspend fun upsertSet(value: GzclpSetEntity): Long
+
+    @Query("SELECT * FROM gzclp_sets WHERE id = :id")
+    suspend fun set(id: Long): GzclpSetEntity?
 
     @Query("DELETE FROM gzclp_sets WHERE id = :id")
     suspend fun deleteSet(id: Long)

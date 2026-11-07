@@ -85,6 +85,8 @@ data class GzclpSessionExerciseEntity(
     val notes: String = "",
     val cue: String = "",
     val restSeconds: Int = 0,
+    /** Null for legacy or unclassified equipment; never assume barbell-total semantics. */
+    val loadMeaning: String? = null,
     val skipped: Boolean = false,
     val progressionReason: String = "",
     val nextRecommendedGrams: Long? = null,
@@ -107,7 +109,11 @@ data class GzclpSetEntity(
     val completed: Boolean = false,
     val warmup: Boolean = false,
     val amrap: Boolean = false,
-    val rir: Int? = null
+    val rir: Int? = null,
+    /** Null on legacy rows: their actual tap time cannot be reconstructed. */
+    val createdAtMillis: Long? = null,
+    val completedAtMillis: Long? = null,
+    val lastEditedAtMillis: Long? = null
 )
 
 data class GzclpExerciseWithSets(

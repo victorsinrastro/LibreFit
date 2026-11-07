@@ -246,9 +246,17 @@ class GzclpViewModel @Inject constructor(
             "Retry warm-ups") { generateWarmups(exercise) } }
     }
 
-    fun replacePendingWarmups(exercise: GzclpSessionExerciseEntity) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.generateWarmups(exercise.id, replacePending = true) } }
-        catch (e: Exception) { error.value = e.message }
+    private fun updateWarmups(
+        exercise: GzclpSessionExerciseEntity,
+        fallbackMessage: String? = null,
+        update: suspend (Long) -> Unit
+    ) = viewModelScope.launch {
+        try { sessionEditMutex.withLock { update(exercise.id) } }
+        catch (e: Exception) { error.value = e.message ?: fallbackMessage }
+    }
+
+    fun replacePendingWarmups(exercise: GzclpSessionExerciseEntity) = updateWarmups(exercise) {
+        repository.generateWarmups(it, replacePending = true)
     }
 
     fun deleteSet(id: Long) = viewModelScope.launch {
@@ -256,10 +264,10 @@ class GzclpViewModel @Inject constructor(
         catch (e: Exception) { error.value = e.message ?: "Set could not be removed." }
     }
 
-    fun skipPendingWarmups(exercise: GzclpSessionExerciseEntity) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.skipPendingWarmups(exercise.id) } }
-        catch (e: Exception) { error.value = e.message ?: "Warm-ups could not be skipped." }
-    }
+    fun skipPendingWarmups(exercise: GzclpSessionExerciseEntity) =
+        updateWarmups(exercise, "Warm-ups could not be skipped.") {
+            repository.skipPendingWarmups(it)
+        }
 
     fun moveSet(set: GzclpSetEntity, direction: Int) = viewModelScope.launch {
         sessionEditMutex.withLock {

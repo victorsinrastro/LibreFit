@@ -398,6 +398,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
         .firstOrNull()
     var tool by remember { mutableStateOf("") }
     var plateTarget by remember { mutableLongStateOf(-1L) }
+    var focusedLoad by remember(nextSet?.id) { mutableStateOf<Long?>(null) }
     var showWarmupReview by remember { mutableStateOf(false) }
     var showFinishReview by remember { mutableStateOf(false) }
     var showAbandon by remember { mutableStateOf(false) }
@@ -618,11 +619,12 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
                 if (ex.cue.isNotBlank()) Text(ex.cue, style = MaterialTheme.typography.bodySmall)
             }
             if (nextWarmup != null) item {
-                FocusedSetRow(nextWarmup, "Warm-up W${warmups.indexOf(nextWarmup) + 1}", unit, onSaveSet) {}
+                FocusedSetRow(nextWarmup, "Warm-up W${warmups.indexOf(nextWarmup) + 1}", unit, onSaveSet,
+                    onWeightChanged = { focusedLoad = it }) {}
                 SkipSetButton("Skip pending warm-ups", busy) { onSkipPendingWarmups(ex) }
             } else if (nextWorking != null) item {
                 FocusedSetRow(nextWorking, "Working set ${exerciseSets.indexOf(nextWorking) + 1}${if (nextWorking.amrap) " · AMRAP" else ""}",
-                    unit, onSaveSet) {
+                    unit, onSaveSet, onWeightChanged = { focusedLoad = it }) {
                     val seconds = if (ex.restSeconds > 0) ex.restSeconds else when (ex.tier) {
                         "T1" -> program.t1RestSeconds; "T2" -> program.t2RestSeconds; else -> program.t3RestSeconds }
                     val hasAnother = sorted.any { row -> !row.exercise.skipped &&
@@ -644,7 +646,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { tool = "warmup" }) { Text("Warm up", maxLines = 1) }
                     if (nextSet != null && ExerciseAlternatives.equipmentFor(ex.exerciseId) == "Barbell")
-                        TextButton(onClick = { plateTarget = nextSet.actualGrams }) { Text("Plates", maxLines = 1) }
+                        TextButton(onClick = { plateTarget = focusedLoad ?: nextSet.actualGrams }) { Text("Plates", maxLines = 1) }
                     TextButton(onClick = { tool = "notes" }) { Text("Notes", maxLines = 1) }
                     TextButton(onClick = { tool = "options" }) { Text("More", maxLines = 1) }
                 }
@@ -727,7 +729,8 @@ private fun CompactCompletedSet(label: String, set: GzclpSetEntity, unit: Weight
 
 @Composable
 private fun FocusedSetRow(set: GzclpSetEntity, label: String, unit: WeightUnit,
-    onSave: (GzclpSetEntity) -> Unit, onComplete: () -> Unit) {
+    onSave: (GzclpSetEntity) -> Unit, onWeightChanged: (Long?) -> Unit,
+    onComplete: () -> Unit) {
     var edit by remember(set.id) { mutableStateOf(set.amrap) }
     var reps by remember(set.id) { mutableStateOf(set.actualReps.toString()) }
     var weight by remember(set.id) { mutableStateOf(displayWeight(set.actualGrams, unit)) }
@@ -747,7 +750,10 @@ private fun FocusedSetRow(set: GzclpSetEntity, label: String, unit: WeightUnit,
         if (set.amrap) Text("AMRAP: stop with 1–2 reps in reserve.", style = MaterialTheme.typography.bodySmall)
         if (edit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(weight, { weight = it }, label = { Text(unit.name.lowercase()) },
+                OutlinedTextField(weight, {
+                    weight = it
+                    onWeightChanged(it.toDoubleOrNull()?.let { load -> GzclpWeights.toGrams(load, unit) })
+                }, label = { Text(unit.name.lowercase()) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true, modifier = Modifier.weight(1f))
                 OutlinedTextField(reps, { reps = it }, label = { Text("reps") },

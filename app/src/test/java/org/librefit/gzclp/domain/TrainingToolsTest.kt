@@ -19,6 +19,21 @@ class TrainingToolsTest {
         assertEquals(listOf(Plate(5_000, 1), Plate(500, 1)), result.perSide)
     }
 
+    @Test fun plateLoadingRecalculatesWhenBenchTargetChangesFrom110To90Lb() {
+        val bar = GzclpWeights.toGrams(45.0, WeightUnit.LB)
+        val inventory = listOf(
+            Plate(GzclpWeights.toGrams(25.0, WeightUnit.LB), 2),
+            Plate(GzclpWeights.toGrams(10.0, WeightUnit.LB), 4),
+            Plate(GzclpWeights.toGrams(5.0, WeightUnit.LB), 2),
+            Plate(GzclpWeights.toGrams(2.5, WeightUnit.LB), 2),
+        )
+        val original = PlateCalculator.calculate(GzclpWeights.toGrams(110.0, WeightUnit.LB), bar, inventory)
+        val updated = PlateCalculator.calculate(GzclpWeights.toGrams(90.0, WeightUnit.LB), bar, inventory)
+        assertEquals(110.0, GzclpWeights.fromGrams(original.actualGrams, WeightUnit.LB), 0.01)
+        assertEquals(90.0, GzclpWeights.fromGrams(updated.actualGrams, WeightUnit.LB), 0.01)
+        assertTrue(updated.perSide != original.perSide)
+    }
+
     @Test fun warmupsStayBelowWorkingWeightAndAboveBar() {
         val inventory = listOf(Plate(20_000, 2), Plate(10_000, 2), Plate(5_000, 2), Plate(2_500, 2))
         val steps = WarmupGenerator.generate(60_000, 20_000, inventory)

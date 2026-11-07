@@ -195,10 +195,16 @@ class GzclpViewModel @Inject constructor(
             recoverableError("Set was not saved. ${e.message.orEmpty()}", "Retry save") { saveSet(set) }
         }
     }
-    fun saveExercise(exercise: GzclpSessionExerciseEntity) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.saveExercise(exercise) } }
-        catch (e: Exception) { error.value = e.message ?: "Exercise change could not be saved." }
+    private fun runSessionEdit(
+        fallbackMessage: String? = null,
+        update: suspend () -> Unit
+    ) = viewModelScope.launch {
+        try { sessionEditMutex.withLock { update() } }
+        catch (e: Exception) { error.value = e.message ?: fallbackMessage }
     }
+
+    fun saveExercise(exercise: GzclpSessionExerciseEntity) =
+        runSessionEdit("Exercise change could not be saved.") { repository.saveExercise(exercise) }
     fun substituteSession(exerciseId: Long, replacementId: String, replacementName: String,
         workingGrams: Long) = viewModelScope.launch {
         try { sessionEditMutex.withLock {
@@ -246,27 +252,15 @@ class GzclpViewModel @Inject constructor(
             "Retry warm-ups") { generateWarmups(exercise) } }
     }
 
-    private fun updateWarmups(
-        exercise: GzclpSessionExerciseEntity,
-        fallbackMessage: String? = null,
-        update: suspend (Long) -> Unit
-    ) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { update(exercise.id) } }
-        catch (e: Exception) { error.value = e.message ?: fallbackMessage }
+    fun replacePendingWarmups(exercise: GzclpSessionExerciseEntity) = runSessionEdit {
+        repository.generateWarmups(exercise.id, replacePending = true)
     }
 
-    fun replacePendingWarmups(exercise: GzclpSessionExerciseEntity) = updateWarmups(exercise) {
-        repository.generateWarmups(it, replacePending = true)
-    }
-
-    fun deleteSet(id: Long) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.deleteSet(id) } }
-        catch (e: Exception) { error.value = e.message ?: "Set could not be removed." }
-    }
+    fun deleteSet(id: Long) = runSessionEdit("Set could not be removed.") { repository.deleteSet(id) }
 
     fun skipPendingWarmups(exercise: GzclpSessionExerciseEntity) =
-        updateWarmups(exercise, "Warm-ups could not be skipped.") {
-            repository.skipPendingWarmups(it)
+        runSessionEdit("Warm-ups could not be skipped.") {
+            repository.skipPendingWarmups(exercise.id)
         }
 
     fun moveSet(set: GzclpSetEntity, direction: Int) = viewModelScope.launch {

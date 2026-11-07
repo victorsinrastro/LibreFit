@@ -277,10 +277,10 @@ class GzclpViewModel @Inject constructor(
             repository.skipPendingWarmups(exercise.id)
         }
 
-    fun skipPendingWorkingSets(exercise: GzclpSessionExerciseEntity) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.skipPendingWorkingSets(exercise.id) } }
-        catch (e: Exception) { error.value = e.message ?: "Working sets could not be skipped." }
-    }
+    fun skipPendingWorkingSets(exercise: GzclpSessionExerciseEntity) =
+        runSessionEdit("Working sets could not be skipped.") {
+            repository.skipPendingWorkingSets(exercise.id)
+        }
 
     fun moveSet(set: GzclpSetEntity, direction: Int) = viewModelScope.launch {
         sessionEditMutex.withLock {

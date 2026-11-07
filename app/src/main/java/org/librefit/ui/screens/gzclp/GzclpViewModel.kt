@@ -206,16 +206,15 @@ class GzclpViewModel @Inject constructor(
     fun saveExercise(exercise: GzclpSessionExerciseEntity) =
         runSessionEdit("Exercise change could not be saved.") { repository.saveExercise(exercise) }
     fun substituteSession(exerciseId: Long, replacementId: String, replacementName: String,
-        workingGrams: Long) = viewModelScope.launch {
-        try { sessionEditMutex.withLock {
+        workingGrams: Long) = runSessionEdit("Exercise could not be substituted.") {
             repository.substituteSessionExercise(exerciseId, replacementId, replacementName, workingGrams)
-        }; error.value = null }
-        catch (e: Exception) { error.value = e.message ?: "Exercise could not be substituted." }
-    }
-    fun undoSessionSubstitution(exerciseId: Long) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.restoreSessionExercise(exerciseId) }; error.value = null }
-        catch (e: Exception) { error.value = e.message ?: "Substitution could not be undone." }
-    }
+            error.value = null
+        }
+    fun undoSessionSubstitution(exerciseId: Long) =
+        runSessionEdit("Substitution could not be undone.") {
+            repository.restoreSessionExercise(exerciseId)
+            error.value = null
+        }
     fun replaceFutureExercise(templateId: String, replacementId: String,
         replacementName: String, startingGrams: Long) = viewModelScope.launch {
         try { repository.replaceTemplateExercise(templateId, replacementId, replacementName, startingGrams);
@@ -235,16 +234,13 @@ class GzclpViewModel @Inject constructor(
             }
         }
     }
-    fun addWarmup(exercise: GzclpSessionExerciseEntity) = viewModelScope.launch {
-        try {
-            sessionEditMutex.withLock {
-                repository.saveSet(GzclpSetEntity(
-                    sessionExerciseId = exercise.id, position = -1, targetReps = 5,
-                    targetGrams = exercise.recommendedGrams, warmup = true
-                ))
-            }
-        } catch (e: Exception) { error.value = e.message ?: "Warm-up could not be added." }
-    }
+    fun addWarmup(exercise: GzclpSessionExerciseEntity) =
+        runSessionEdit("Warm-up could not be added.") {
+            repository.saveSet(GzclpSetEntity(
+                sessionExerciseId = exercise.id, position = -1, targetReps = 5,
+                targetGrams = exercise.recommendedGrams, warmup = true
+            ))
+        }
 
     fun generateWarmups(exercise: GzclpSessionExerciseEntity): kotlinx.coroutines.Job = viewModelScope.launch {
         try { sessionEditMutex.withLock { repository.generateWarmups(exercise.id) }; clearError() }

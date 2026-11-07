@@ -424,8 +424,8 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     if (showFinishReview) AlertDialog(onDismissRequest = { showFinishReview = false },
         title = { Text(if (allResolved) "Review progression" else "Finish with sets remaining?") },
         text = { Text(buildString {
-            if (!allResolved) append("Unfinished attempted exercises may move to a lower rep scheme. Skip an exercise if it was not attempted.\\n\\n")
-            if (exceptional.isNotEmpty()) append(exceptional.joinToString("\\n\\n"))
+            if (!allResolved) append("Unfinished attempted exercises may move to a lower rep scheme. Skip an exercise if it was not attempted.\n\n")
+            if (exceptional.isNotEmpty()) append(exceptional.joinToString("\n\n"))
         }) },
         confirmButton = { TextButton(onClick = { showFinishReview = false; onFinish() }) { Text("Finish workout") } },
         dismissButton = { TextButton(onClick = { showFinishReview = false }) { Text("Keep logging") } })

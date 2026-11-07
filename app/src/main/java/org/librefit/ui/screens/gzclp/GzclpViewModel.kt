@@ -197,10 +197,16 @@ class GzclpViewModel @Inject constructor(
     }
     private fun runSessionEdit(
         fallbackMessage: String? = null,
+        onSuccess: () -> Unit = {},
+        onFailure: (Exception) -> Unit = { exception ->
+            error.value = exception.message ?: fallbackMessage
+        },
         update: suspend () -> Unit
     ) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { update() } }
-        catch (e: Exception) { error.value = e.message ?: fallbackMessage }
+        try {
+            sessionEditMutex.withLock { update() }
+            onSuccess()
+        } catch (e: Exception) { onFailure(e) }
     }
 
     fun saveExercise(exercise: GzclpSessionExerciseEntity) =
@@ -242,10 +248,12 @@ class GzclpViewModel @Inject constructor(
             ))
         }
 
-    fun generateWarmups(exercise: GzclpSessionExerciseEntity): kotlinx.coroutines.Job = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.generateWarmups(exercise.id) }; clearError() }
-        catch (e: Exception) { recoverableError("Warm-ups were not generated. ${e.message.orEmpty()}",
+    fun generateWarmups(exercise: GzclpSessionExerciseEntity): kotlinx.coroutines.Job = runSessionEdit(
+        onSuccess = { clearError() },
+        onFailure = { e -> recoverableError("Warm-ups were not generated. ${e.message.orEmpty()}",
             "Retry warm-ups") { generateWarmups(exercise) } }
+    ) {
+        repository.generateWarmups(exercise.id)
     }
 
     fun replacePendingWarmups(exercise: GzclpSessionExerciseEntity) = runSessionEdit {

@@ -272,15 +272,17 @@ class GzclpViewModel @Inject constructor(
 
     fun deleteSet(id: Long) = runSessionEdit("Set could not be removed.") { repository.deleteSet(id) }
 
+    private fun skipPendingSets(
+        exercise: GzclpSessionExerciseEntity,
+        fallbackMessage: String,
+        skip: suspend (Long) -> Unit
+    ) = runSessionEdit(fallbackMessage) { skip(exercise.id) }
+
     fun skipPendingWarmups(exercise: GzclpSessionExerciseEntity) =
-        runSessionEdit("Warm-ups could not be skipped.") {
-            repository.skipPendingWarmups(exercise.id)
-        }
+        skipPendingSets(exercise, "Warm-ups could not be skipped.") { repository.skipPendingWarmups(it) }
 
     fun skipPendingWorkingSets(exercise: GzclpSessionExerciseEntity) =
-        runSessionEdit("Working sets could not be skipped.") {
-            repository.skipPendingWorkingSets(exercise.id)
-        }
+        skipPendingSets(exercise, "Working sets could not be skipped.") { repository.skipPendingWorkingSets(it) }
 
     fun moveSet(set: GzclpSetEntity, direction: Int) = viewModelScope.launch {
         sessionEditMutex.withLock {

@@ -325,7 +325,19 @@ class GzclpRepository @Inject constructor(
 
     suspend fun saveSet(value: GzclpSetEntity) = database.withTransaction {
         val owner = findOwner(value.sessionExerciseId) ?: error("Exercise missing")
-        dao.upsertSet(value)
+        val item = dao.session(owner.id)?.exercises?.firstOrNull { it.exercise.id == value.sessionExerciseId }
+            ?: error("Exercise missing")
+        val previous = item.sets.firstOrNull { it.id == value.id }
+        val changedWorkingLoad = owner.status == "ACTIVE" && item.exercise.tier == "T1" &&
+            previous != null && !previous.completed && !value.warmup && value.actualGrams > 0 &&
+            previous.actualGrams != value.actualGrams
+        if (changedWorkingLoad) {
+            item.sets.filter { !it.warmup && !it.completed && it.id != value.id }.forEach {
+                dao.upsertSet(it.copy(targetGrams = value.actualGrams, actualGrams = value.actualGrams))
+            }
+            dao.upsertExercise(item.exercise.copy(recommendedGrams = value.actualGrams))
+        }
+        dao.upsertSet(if (changedWorkingLoad) value.copy(targetGrams = value.actualGrams) else value)
         if (owner.status == "COMPLETED") dao.upsertSession(owner.copy(historicalCorrection = true))
     }
 

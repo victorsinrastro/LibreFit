@@ -599,9 +599,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
             }
             if (nextWarmup != null) item {
                 FocusedSetRow(nextWarmup, "Warm-up W${warmups.indexOf(nextWarmup) + 1}", unit, onSaveSet) {}
-                TextButton(onClick = { onSkipPendingWarmups(ex) }, enabled = !busy) {
-                    Text("Skip pending warm-ups")
-                }
+                SkipSetButton("Skip pending warm-ups", busy) { onSkipPendingWarmups(ex) }
             } else if (nextWorking != null) item {
                 FocusedSetRow(nextWorking, "Working set ${exerciseSets.indexOf(nextWorking) + 1}${if (nextWorking.amrap) " · AMRAP" else ""}",
                     unit, onSaveSet) {
@@ -613,12 +611,12 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
                         onSaveSession(details.session.copy(restDeadlineMillis = System.currentTimeMillis() + seconds * 1000L,
                             restPausedMillis = 0))
                 }
-                TextButton(onClick = {
+                SkipSetButton("Skip remaining working sets", busy) {
                     onSkipPendingWorkingSets(ex)
                     chosenId = sorted.firstOrNull { other -> other.exercise.position > ex.position &&
                         !other.exercise.skipped && other.sets.any { !it.warmup && !it.completed } }
                         ?.exercise?.id ?: chosenId
-                }, enabled = !busy) { Text("Skip remaining working sets") }
+                }
             }
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()),
@@ -688,6 +686,11 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
             }
         }
     }
+}
+
+@Composable
+private fun SkipSetButton(label: String, busy: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = !busy) { Text(label) }
 }
 
 @Composable

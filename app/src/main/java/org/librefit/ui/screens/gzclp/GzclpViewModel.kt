@@ -195,26 +195,47 @@ class GzclpViewModel @Inject constructor(
             recoverableError("Set was not saved. ${e.message.orEmpty()}", "Retry save") { saveSet(set) }
         }
     }
-    fun saveExercise(exercise: GzclpSessionExerciseEntity) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.saveExercise(exercise) } }
-        catch (e: Exception) { error.value = e.message ?: "Exercise change could not be saved." }
+    private fun runEdit(
+        fallbackMessage: String? = null,
+        onSuccess: () -> Unit = {},
+        onFailure: ((Exception) -> Unit)? = null,
+        update: suspend () -> Unit
+    ) = viewModelScope.launch {
+        try {
+            update()
+            onSuccess()
+        } catch (e: Exception) {
+            onFailure?.invoke(e) ?: run { error.value = e.message ?: fallbackMessage }
+        }
     }
+
+    private fun runSessionEdit(
+        fallbackMessage: String? = null,
+        onSuccess: () -> Unit = {},
+        onFailure: ((Exception) -> Unit)? = null,
+        update: suspend () -> Unit
+    ) = runEdit(fallbackMessage, onSuccess, onFailure) {
+        sessionEditMutex.withLock { update() }
+    }
+
+    fun saveExercise(exercise: GzclpSessionExerciseEntity) =
+        runSessionEdit("Exercise change could not be saved.") { repository.saveExercise(exercise) }
     fun substituteSession(exerciseId: Long, replacementId: String, replacementName: String,
-        workingGrams: Long) = viewModelScope.launch {
-        try { sessionEditMutex.withLock {
+        workingGrams: Long) = runSessionEdit("Exercise could not be substituted.") {
             repository.substituteSessionExercise(exerciseId, replacementId, replacementName, workingGrams)
-        }; error.value = null }
-        catch (e: Exception) { error.value = e.message ?: "Exercise could not be substituted." }
-    }
-    fun undoSessionSubstitution(exerciseId: Long) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.restoreSessionExercise(exerciseId) }; error.value = null }
-        catch (e: Exception) { error.value = e.message ?: "Substitution could not be undone." }
-    }
+            error.value = null
+        }
+    fun undoSessionSubstitution(exerciseId: Long) =
+        runSessionEdit("Substitution could not be undone.") {
+            repository.restoreSessionExercise(exerciseId)
+            error.value = null
+        }
     fun replaceFutureExercise(templateId: String, replacementId: String,
-        replacementName: String, startingGrams: Long) = viewModelScope.launch {
-        try { repository.replaceTemplateExercise(templateId, replacementId, replacementName, startingGrams);
-            error.value = null }
-        catch (e: Exception) { error.value = e.message ?: "Program exercise could not be changed." }
+        replacementName: String, startingGrams: Long) = runEdit(
+        fallbackMessage = "Program exercise could not be changed.",
+        onSuccess = { error.value = null }
+    ) {
+        repository.replaceTemplateExercise(templateId, replacementId, replacementName, startingGrams)
     }
     fun saveSession(session: GzclpSessionEntity): kotlinx.coroutines.Job = viewModelScope.launch {
         try {
@@ -229,32 +250,32 @@ class GzclpViewModel @Inject constructor(
             }
         }
     }
-    fun addWarmup(exercise: GzclpSessionExerciseEntity) = viewModelScope.launch {
-        try {
-            sessionEditMutex.withLock {
-                repository.saveSet(GzclpSetEntity(
-                    sessionExerciseId = exercise.id, position = -1, targetReps = 5,
-                    targetGrams = exercise.recommendedGrams, warmup = true
-                ))
-            }
-        } catch (e: Exception) { error.value = e.message ?: "Warm-up could not be added." }
-    }
+    fun addWarmup(exercise: GzclpSessionExerciseEntity) =
+        runSessionEdit("Warm-up could not be added.") {
+            repository.saveSet(GzclpSetEntity(
+                sessionExerciseId = exercise.id, position = -1, targetReps = 5,
+                targetGrams = exercise.recommendedGrams, warmup = true
+            ))
+        }
 
-    fun generateWarmups(exercise: GzclpSessionExerciseEntity): kotlinx.coroutines.Job = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.generateWarmups(exercise.id) }; clearError() }
-        catch (e: Exception) { recoverableError("Warm-ups were not generated. ${e.message.orEmpty()}",
+    fun generateWarmups(exercise: GzclpSessionExerciseEntity): kotlinx.coroutines.Job = runSessionEdit(
+        onSuccess = { clearError() },
+        onFailure = { e -> recoverableError("Warm-ups were not generated. ${e.message.orEmpty()}",
             "Retry warm-ups") { generateWarmups(exercise) } }
+    ) {
+        repository.generateWarmups(exercise.id)
     }
 
-    fun replacePendingWarmups(exercise: GzclpSessionExerciseEntity) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.generateWarmups(exercise.id, replacePending = true) } }
-        catch (e: Exception) { error.value = e.message }
+    fun replacePendingWarmups(exercise: GzclpSessionExerciseEntity) = runSessionEdit {
+        repository.generateWarmups(exercise.id, replacePending = true)
     }
 
-    fun deleteSet(id: Long) = viewModelScope.launch {
-        try { sessionEditMutex.withLock { repository.deleteSet(id) } }
-        catch (e: Exception) { error.value = e.message ?: "Set could not be removed." }
-    }
+    fun deleteSet(id: Long) = runSessionEdit("Set could not be removed.") { repository.deleteSet(id) }
+
+    fun skipPendingWarmups(exercise: GzclpSessionExerciseEntity) =
+        runSessionEdit("Warm-ups could not be skipped.") {
+            repository.skipPendingWarmups(exercise.id)
+        }
 
     fun moveSet(set: GzclpSetEntity, direction: Int) = viewModelScope.launch {
         sessionEditMutex.withLock {

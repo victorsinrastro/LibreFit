@@ -144,6 +144,7 @@ fun GzclpScreen(navController: NavHostController, viewModel: GzclpViewModel = hi
                 active != null -> ActiveWorkout(active!!, program!!, templates, progress, detailedHistory, busy,
                     viewModel::saveSet, viewModel::saveExercise, viewModel::saveSession,
                     viewModel::addWarmup, viewModel::generateWarmups, viewModel::replacePendingWarmups,
+                    viewModel::skipPendingWarmups,
                     viewModel::addWorkingSet, viewModel::deleteSet, viewModel::moveSet,
                     viewModel::substituteSession, viewModel::undoSessionSubstitution,
                     viewModel::replaceFutureExercise,
@@ -334,6 +335,7 @@ private fun ActiveWorkout(details: GzclpSessionWithDetails, program: GzclpProgra
     onAddWarmup: (GzclpSessionExerciseEntity) -> Unit,
     onGenerateWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onReplacePendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
+    onSkipPendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onAddWorkingSet: (GzclpSessionExerciseEntity) -> Unit,
     onDeleteSet: (Long) -> Unit, onMoveSet: (GzclpSetEntity, Int) -> Unit,
     onSubstituteSession: (Long, String, String, Long) -> Unit,
@@ -343,7 +345,7 @@ private fun ActiveWorkout(details: GzclpSessionWithDetails, program: GzclpProgra
     onAbandon: () -> Unit) {
     FocusedWorkout(details, program, templates, progress, history, busy, onSaveSet,
         onSaveExercise, onSaveSession, onAddWarmup, onGenerateWarmups,
-        onReplacePendingWarmups, onAddWorkingSet, onDeleteSet, onMoveSet,
+        onReplacePendingWarmups, onSkipPendingWarmups, onAddWorkingSet, onDeleteSet, onMoveSet,
         onSubstituteSession, onUndoSubstitution, onReplaceFuture, onFinish, onAbandon)
 }
 
@@ -358,6 +360,7 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     onAddWarmup: (GzclpSessionExerciseEntity) -> Unit,
     onGenerateWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onReplacePendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
+    onSkipPendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onAddWorkingSet: (GzclpSessionExerciseEntity) -> Unit,
     onDeleteSet: (Long) -> Unit, onMoveSet: (GzclpSetEntity, Int) -> Unit,
     onSubstituteSession: (Long, String, String, Long) -> Unit,
@@ -592,6 +595,9 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
             }
             if (nextWarmup != null) item {
                 FocusedSetRow(nextWarmup, "Warm-up W${warmups.indexOf(nextWarmup) + 1}", unit, onSaveSet) {}
+                TextButton(onClick = { onSkipPendingWarmups(ex) }, enabled = !busy) {
+                    Text("Skip pending warm-ups")
+                }
             } else if (nextWorking != null) item {
                 FocusedSetRow(nextWorking, "Working set ${exerciseSets.indexOf(nextWorking) + 1}${if (nextWorking.amrap) " · AMRAP" else ""}",
                     unit, onSaveSet) {

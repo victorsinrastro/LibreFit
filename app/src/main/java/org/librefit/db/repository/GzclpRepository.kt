@@ -73,10 +73,8 @@ class GzclpRepository @Inject constructor(
     suspend fun substituteSessionExercise(exerciseId: Long, replacementId: String,
         replacementName: String, workingGrams: Long) = database.withTransaction {
         require(replacementId.isNotBlank() && replacementName.isNotBlank() && workingGrams > 0)
-        val owner = dao.sessionForExercise(exerciseId) ?: error("Workout missing")
+        val (owner, item) = sessionExercise(exerciseId, "Workout missing")
         require(owner.status == "ACTIVE") { "Only an active workout can be changed" }
-        val item = dao.session(owner.id)?.exercises?.firstOrNull { it.exercise.id == exerciseId }
-            ?: error("Exercise missing")
         require(item.sets.none { it.completed }) { "Recorded sets must stay with their original exercise" }
         require(item.sets.none { it.warmup }) { "Remove pending warm-ups before substituting" }
         val current = item.exercise
@@ -94,10 +92,8 @@ class GzclpRepository @Inject constructor(
     }
 
     suspend fun restoreSessionExercise(exerciseId: Long) = database.withTransaction {
-        val owner = dao.sessionForExercise(exerciseId) ?: error("Workout missing")
+        val (owner, item) = sessionExercise(exerciseId, "Workout missing")
         require(owner.status == "ACTIVE")
-        val item = dao.session(owner.id)?.exercises?.firstOrNull { it.exercise.id == exerciseId }
-            ?: error("Exercise missing")
         require(item.exercise.progressionKey.startsWith("session:")) { "No session replacement to undo" }
         require(item.sets.none { it.completed }) { "Recorded sets must stay with their replacement exercise" }
         val template = dao.templatesForWorkout(owner.workoutIndex).firstOrNull {
@@ -339,11 +335,13 @@ class GzclpRepository @Inject constructor(
         if (owner?.status == "COMPLETED") dao.upsertSession(owner.copy(historicalCorrection = true))
     }
 
+    suspend fun skipPendingWarmups(exerciseId: Long) = database.withTransaction {
+        val exercise = activeExercise(exerciseId)
+        exercise.sets.filter { it.warmup && !it.completed }.forEach { dao.deleteSet(it.id) }
+    }
+
     suspend fun generateWarmups(exerciseId: Long, replacePending: Boolean = false) = database.withTransaction {
-        val session = dao.sessionForExercise(exerciseId) ?: error("Exercise missing")
-        require(session.status == "ACTIVE")
-        val item = dao.session(session.id)?.exercises?.firstOrNull { it.exercise.id == exerciseId }
-            ?: error("Exercise missing")
+        val item = activeExercise(exerciseId)
         val program = dao.program() ?: error("Program missing")
         val inventory = program.plateInventory.split(',').mapNotNull { entry ->
             val parts = entry.split(':')
@@ -376,6 +374,22 @@ class GzclpRepository @Inject constructor(
                     targetReps = step.reps, actualReps = step.reps,
                     targetGrams = step.grams, actualGrams = step.grams, warmup = true))
             }
+    }
+
+    private suspend fun sessionExercise(
+        exerciseId: Long,
+        missingSessionMessage: String = "Exercise missing"
+    ): Pair<GzclpSessionEntity, GzclpExerciseWithSets> {
+        val session = dao.sessionForExercise(exerciseId) ?: error(missingSessionMessage)
+        val exercise = dao.session(session.id)?.exercises?.firstOrNull { it.exercise.id == exerciseId }
+            ?: error("Exercise missing")
+        return session to exercise
+    }
+
+    private suspend fun activeExercise(exerciseId: Long): GzclpExerciseWithSets {
+        val (session, exercise) = sessionExercise(exerciseId)
+        require(session.status == "ACTIVE")
+        return exercise
     }
 
     suspend fun saveExercise(value: GzclpSessionExerciseEntity) = database.withTransaction {

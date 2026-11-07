@@ -93,11 +93,14 @@ object GzclpEngine {
             DecisionStatus.RESET_REQUIRED, progress, "Record a new five-rep max to restart this lift."
         )
         if (working.isEmpty()) return skippedDecision(progress, "Exercise skipped.")
+        // A zero-weight entry used to move past an unfinished set is not a training load.
+        val actualLoad = working.lastOrNull { it.weightGrams > 0 }?.weightGrams
+            ?: return skippedDecision(progress,
+                "No valid working weight was recorded; progression was not changed.")
         if (sets.count { !it.isWarmup } < target.sets) return skippedDecision(
             progress,
             "Partial exercise: remaining working sets were skipped; progression unchanged.",
-            working.lastOrNull { it.weightGrams > 0 }?.weightGrams)
-        val actualLoad = working.last().weightGrams
+            actualLoad)
         val success = working.size >= target.sets &&
             working.take(target.sets).all { it.reps >= target.reps }
         if (progress.tier == Tier.T3) {

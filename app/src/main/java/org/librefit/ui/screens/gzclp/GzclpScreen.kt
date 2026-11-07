@@ -148,6 +148,8 @@ fun GzclpScreen(navController: NavHostController, viewModel: GzclpViewModel = hi
                     onReviewProgress = { viewModel.previewHistoricalCorrection(selected!!.session.id) })
                 active != null -> ActiveWorkout(active!!, program!!, templates, progress, detailedHistory, busy,
                     viewModel::saveSet, viewModel::saveExercise, viewModel::saveSession,
+                    viewModel::pauseSessionTimer, viewModel::resumeSessionTimer,
+                    viewModel::resolveSessionTimer,
                     viewModel::addWarmup, viewModel::generateWarmups, viewModel::replacePendingWarmups,
                     viewModel::skipPendingWarmups,
                     viewModel::skipPendingWorkingSets,
@@ -341,6 +343,8 @@ private fun ActiveWorkout(details: GzclpSessionWithDetails, program: GzclpProgra
     busy: Boolean, onSaveSet: (GzclpSetEntity) -> Unit,
     onSaveExercise: (GzclpSessionExerciseEntity) -> Unit,
     onSaveSession: (GzclpSessionEntity) -> Unit,
+    onPauseTimer: () -> Unit, onResumeTimer: () -> Unit,
+    onResolveTimer: (Long) -> Unit,
     onAddWarmup: (GzclpSessionExerciseEntity) -> Unit,
     onGenerateWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onReplacePendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
@@ -354,7 +358,8 @@ private fun ActiveWorkout(details: GzclpSessionWithDetails, program: GzclpProgra
     onFinish: () -> Unit,
     onAbandon: () -> Unit) {
     FocusedWorkout(details, program, templates, progress, history, busy, onSaveSet,
-        onSaveExercise, onSaveSession, onAddWarmup, onGenerateWarmups,
+        onSaveExercise, onSaveSession, onPauseTimer, onResumeTimer, onResolveTimer,
+        onAddWarmup, onGenerateWarmups,
         onReplacePendingWarmups, onSkipPendingWarmups, onSkipPendingWorkingSets,
         onAddWorkingSet, onDeleteSet, onMoveSet,
         onSubstituteSession, onUndoSubstitution, onReplaceFuture, onFinish, onAbandon)
@@ -368,6 +373,8 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     onSaveSet: (GzclpSetEntity) -> Unit,
     onSaveExercise: (GzclpSessionExerciseEntity) -> Unit,
     onSaveSession: (GzclpSessionEntity) -> Unit,
+    onPauseTimer: () -> Unit, onResumeTimer: () -> Unit,
+    onResolveTimer: (Long) -> Unit,
     onAddWarmup: (GzclpSessionExerciseEntity) -> Unit,
     onGenerateWarmups: (GzclpSessionExerciseEntity) -> Unit,
     onReplacePendingWarmups: (GzclpSessionExerciseEntity) -> Unit,
@@ -416,6 +423,9 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
     }
     val timer = RestDeadline(details.session.restDeadlineMillis, details.session.restPausedMillis)
     val remaining = timer.remaining(now)
+    val sessionClock = SessionClock(details.session.activeElapsedMillis, details.session.activeSinceMillis)
+    val activeDuration = sessionClock.elapsed(now)
+    var legacyMinutes by remember(details.session.id) { mutableStateOf("") }
     val exceptional = sorted.mapNotNull { lift ->
         val state = progress.find { it.progressionKey == lift.exercise.progressionKey } ?: return@mapNotNull null
         if (lift.exercise.skipped) return@mapNotNull null
@@ -574,6 +584,36 @@ private fun FocusedWorkout(details: GzclpSessionWithDetails, program: GzclpProgr
             Text("$completed of ${working.size} working sets", style = MaterialTheme.typography.bodyMedium)
             LinearProgressIndicator(progress = { if (working.isEmpty()) 0f else completed.toFloat() / working.size },
                 modifier = Modifier.fillMaxWidth())
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (activeDuration == null) {
+                OutlinedTextField(legacyMinutes, { legacyMinutes = it },
+                    label = { Text("Active minutes for this older session") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true, modifier = Modifier.weight(1f))
+                TextButton(onClick = { legacyMinutes.toLongOrNull()?.let(onResolveTimer) },
+                    enabled = legacyMinutes.toLongOrNull()?.let { it >= 0 } == true) { Text("Set time") }
+            } else {
+                Text("Active time ${activeDuration / 60_000} min${if (details.session.activeSinceMillis == null) " · paused" else ""}",
+                    modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = if (details.session.activeSinceMillis == null) onResumeTimer else onPauseTimer) {
+                    Text(if (details.session.activeSinceMillis == null) "Resume time" else "Pause time")
+                }
+            }
+        }
+        if (activeDuration != null && details.session.activeSinceMillis == null) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(legacyMinutes, { legacyMinutes = it },
+                    label = { Text("Correct active minutes") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true, modifier = Modifier.weight(1f))
+                TextButton(onClick = { legacyMinutes.toLongOrNull()?.let(onResolveTimer) },
+                    enabled = legacyMinutes.toLongOrNull()?.let { it >= 0 } == true) { Text("Set time") }
+            }
         }
         if (details.session.restDeadlineMillis > 0L || details.session.restPausedMillis > 0L) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -847,8 +887,9 @@ private fun SessionSummary(details: GzclpSessionWithDetails, program: GzclpProgr
     onReviewProgress: () -> Unit) {
     val unit = weightUnit(program)
     val sets = details.exercises.flatMap { it.sets }.filter { it.completed && !it.warmup }
-    val minutes = (((details.session.finishedAt ?: System.currentTimeMillis()) -
-        details.session.startedAt) / 60_000L).coerceAtLeast(0)
+    val elapsedMillis = details.session.activeElapsedMillis ?: ((details.session.finishedAt ?: System.currentTimeMillis()) -
+        details.session.startedAt).coerceAtLeast(0)
+    val minutes = elapsedMillis.coerceAtLeast(0) / 60_000L
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Text("Workout ${dayNames[details.session.workoutIndex]} complete", style = MaterialTheme.typography.headlineMedium,

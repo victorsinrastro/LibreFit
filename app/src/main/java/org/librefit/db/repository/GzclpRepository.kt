@@ -15,6 +15,7 @@ import org.librefit.gzclp.domain.Tier
 import org.librefit.gzclp.domain.WarmupGenerator
 import org.librefit.gzclp.domain.Plate
 import org.librefit.gzclp.domain.RestDeadline
+import org.librefit.gzclp.domain.SessionClock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -282,7 +283,9 @@ class GzclpRepository @Inject constructor(
         dao.active()?.let { return@withTransaction it.id }
         val configured = dao.program() ?: error("Configure GZCLP first")
         require(workoutIndex == configured.nextWorkoutIndex) { "Expected workout ${configured.nextWorkoutIndex}" }
-        val sessionId = dao.insertSession(GzclpSessionEntity(workoutIndex = workoutIndex))
+        val now = System.currentTimeMillis()
+        val sessionId = dao.insertSession(GzclpSessionEntity(workoutIndex = workoutIndex,
+            startedAt = now, activeElapsedMillis = 0, activeSinceMillis = now))
         dao.templatesForWorkout(workoutIndex).forEach { template ->
             val state = dao.progress(template.progressionKey)
                 ?: error("Missing progression for ${template.progressionKey}")
@@ -420,8 +423,32 @@ class GzclpRepository @Inject constructor(
         dao.upsertSession(value.copy(status = current.status,
             progressionApplied = current.progressionApplied,
             finishedAt = current.finishedAt,
+            activeElapsedMillis = current.activeElapsedMillis,
+            activeSinceMillis = current.activeSinceMillis,
             workoutIndex = current.workoutIndex,
             historicalCorrection = current.historicalCorrection || current.status == "COMPLETED"))
+    }
+
+    suspend fun pauseSessionTimer(id: Long, nowMillis: Long = System.currentTimeMillis()) = database.withTransaction {
+        val session = dao.session(id)?.session ?: error("Session missing")
+        require(session.status == "ACTIVE")
+        val paused = SessionClock(session.activeElapsedMillis, session.activeSinceMillis).pause(nowMillis)
+        require(paused.accumulatedMillis != null) { "Set the active duration for this older session first." }
+        dao.upsertSession(session.copy(activeElapsedMillis = paused.accumulatedMillis, activeSinceMillis = null))
+    }
+
+    suspend fun resumeSessionTimer(id: Long, nowMillis: Long = System.currentTimeMillis()) = database.withTransaction {
+        val session = dao.session(id)?.session ?: error("Session missing")
+        require(session.status == "ACTIVE")
+        val resumed = SessionClock(session.activeElapsedMillis, session.activeSinceMillis).resume(nowMillis)
+        dao.upsertSession(session.copy(activeSinceMillis = resumed.runningSinceMillis))
+    }
+
+    suspend fun resolveSessionTimer(id: Long, activeMinutes: Long) = database.withTransaction {
+        val session = dao.session(id)?.session ?: error("Session missing")
+        require(session.status == "ACTIVE")
+        val resolved = SessionClock(session.activeElapsedMillis, session.activeSinceMillis).resolve(activeMinutes)
+        dao.upsertSession(session.copy(activeElapsedMillis = resolved.accumulatedMillis, activeSinceMillis = null))
     }
 
     /** Returns false if already finished. One transaction owns set evaluation, updates, and rotation. */
@@ -429,6 +456,9 @@ class GzclpRepository @Inject constructor(
         val details = dao.session(id) ?: return@withTransaction false
         val session = details.session
         if (session.status != "ACTIVE" || session.progressionApplied) return@withTransaction false
+        val now = System.currentTimeMillis()
+        val elapsed = SessionClock(session.activeElapsedMillis, session.activeSinceMillis).elapsed(now)
+            ?: error("Set the active duration for this older session before finishing.")
         details.exercises.forEach { item ->
             val exercise = item.exercise
             val old = dao.progress(exercise.progressionKey)
@@ -465,8 +495,8 @@ class GzclpRepository @Inject constructor(
                 ))
             }
         }
-        val now = System.currentTimeMillis()
-        dao.upsertSession(session.copy(status = "COMPLETED", finishedAt = now, progressionApplied = true))
+        dao.upsertSession(session.copy(status = "COMPLETED", finishedAt = now,
+            activeElapsedMillis = elapsed, activeSinceMillis = null, progressionApplied = true))
         val program = dao.program() ?: error("Program missing")
         dao.upsertProgram(program.copy(nextWorkoutIndex = (session.workoutIndex + 1) % 4))
         true

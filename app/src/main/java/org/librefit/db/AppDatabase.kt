@@ -37,7 +37,7 @@ import org.librefit.db.entity.Workout
     entities = [Workout::class, Exercise::class, Set::class, Measurement::class, ExerciseDC::class,
         GzclpProgramEntity::class, GzclpTemplateExerciseEntity::class, GzclpProgressEntity::class,
         GzclpSessionEntity::class, GzclpSessionExerciseEntity::class, GzclpSetEntity::class],
-    version = 8,
+    version = 9,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -55,6 +55,13 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE gzclp_session_exercises ADD COLUMN baselineIncrementGrams INTEGER")
                 db.execSQL("ALTER TABLE gzclp_session_exercises ADD COLUMN baselineCycleStartGrams INTEGER")
                 db.execSQL("ALTER TABLE gzclp_session_exercises ADD COLUMN baselinePendingReset INTEGER")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE gzclp_sessions ADD COLUMN activeElapsedMillis INTEGER")
+                db.execSQL("ALTER TABLE gzclp_sessions ADD COLUMN activeSinceMillis INTEGER")
             }
         }
 

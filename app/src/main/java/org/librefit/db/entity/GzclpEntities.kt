@@ -59,6 +59,8 @@ data class GzclpSessionEntity(
     val status: String = "ACTIVE",
     val startedAt: Long = System.currentTimeMillis(),
     val finishedAt: Long? = null,
+    val activeElapsedMillis: Long? = null,
+    val activeSinceMillis: Long? = null,
     val notes: String = "",
     val restDeadlineMillis: Long = 0,
     val restPausedMillis: Long = 0,

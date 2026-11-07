@@ -137,6 +137,34 @@ class GzclpWarmupPersistenceTest {
         } finally { db.close() }
     }
 
+    @Test fun sessionTimerPersistsPauseResolveAndFinishWithoutCountingDays() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        try {
+            val repo = GzclpRepository(db, db.getGzclpDao())
+            repo.configure(GzclpProgramEntity(),
+                listOf(GzclpTemplateExerciseEntity("a1-squat", 0, 0, "squat", "Squat", "T1", "squat:T1")),
+                listOf(GzclpProgressEntity("squat:T1", "squat", "T1", recommendedGrams = 60_000,
+                    incrementGrams = 5_000)))
+            val id = repo.startSession(0)
+            val started = repo.getSession(id)!!.session.startedAt
+            repo.pauseSessionTimer(id, started + 30 * 60_000L)
+            assertEquals(30 * 60_000L, repo.getSession(id)!!.session.activeElapsedMillis)
+            repo.resumeSessionTimer(id, started + 4 * 86_400_000L)
+            repo.pauseSessionTimer(id, started + 4 * 86_400_000L + 15 * 60_000L)
+            assertEquals(45 * 60_000L, repo.getSession(id)!!.session.activeElapsedMillis)
+            repo.resolveSessionTimer(id, 40)
+            assertEquals(40 * 60_000L, repo.getSession(id)!!.session.activeElapsedMillis)
+            // Simulate a pre-migration active session whose duration cannot be inferred.
+            db.getGzclpDao().upsertSession(repo.getSession(id)!!.session.copy(
+                activeElapsedMillis = null, activeSinceMillis = null))
+            repo.resolveSessionTimer(id, 12)
+            assertEquals(12 * 60_000L, repo.getSession(id)!!.session.activeElapsedMillis)
+            repo.finishSession(id)
+            assertEquals(12 * 60_000L, repo.getSession(id)!!.session.activeElapsedMillis)
+        } finally { db.close() }
+    }
+
     @Test fun poundWorkingWeightsSurviveRoomSaveAndReload() = withFixture(
         unit = WeightUnit.LB,
         recommendedGrams = GzclpWeights.toGrams(90.0, WeightUnit.LB),

@@ -95,6 +95,11 @@ fun GzclpScreen(navController: NavHostController, viewModel: GzclpViewModel = hi
         topBar = {
             TopAppBar(
                 title = { Text(if (program == null) "Setup" else if (active != null) "Workout" else "GZCLP") },
+                navigationIcon = {
+                    if (active != null) TextButton(onClick = {
+                        navController.navigate(org.librefit.nav.Route.MainScreen) { launchSingleTop = true }
+                    }) { Text("Home") }
+                },
                 actions = {
                     IconButton(onClick = { showAppMenu = true }, modifier = Modifier.semantics {
                         contentDescription = "More options"

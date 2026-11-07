@@ -340,18 +340,12 @@ class GzclpRepository @Inject constructor(
     }
 
     suspend fun skipPendingWarmups(exerciseId: Long) = database.withTransaction {
-        val session = dao.sessionForExercise(exerciseId) ?: error("Exercise missing")
-        require(session.status == "ACTIVE")
-        val exercise = dao.session(session.id)?.exercises?.firstOrNull { it.exercise.id == exerciseId }
-            ?: error("Exercise missing")
+        val exercise = requireActiveExercise(exerciseId)
         exercise.sets.filter { it.warmup && !it.completed }.forEach { dao.deleteSet(it.id) }
     }
 
     suspend fun generateWarmups(exerciseId: Long, replacePending: Boolean = false) = database.withTransaction {
-        val session = dao.sessionForExercise(exerciseId) ?: error("Exercise missing")
-        require(session.status == "ACTIVE")
-        val item = dao.session(session.id)?.exercises?.firstOrNull { it.exercise.id == exerciseId }
-            ?: error("Exercise missing")
+        val item = requireActiveExercise(exerciseId)
         val program = dao.program() ?: error("Program missing")
         val inventory = program.plateInventory.split(',').mapNotNull { entry ->
             val parts = entry.split(':')
@@ -384,6 +378,13 @@ class GzclpRepository @Inject constructor(
                     targetReps = step.reps, actualReps = step.reps,
                     targetGrams = step.grams, actualGrams = step.grams, warmup = true))
             }
+    }
+
+    private suspend fun requireActiveExercise(exerciseId: Long): GzclpExerciseWithSets {
+        val session = dao.sessionForExercise(exerciseId) ?: error("Exercise missing")
+        require(session.status == "ACTIVE")
+        return dao.session(session.id)?.exercises?.firstOrNull { it.exercise.id == exerciseId }
+            ?: error("Exercise missing")
     }
 
     suspend fun saveExercise(value: GzclpSessionExerciseEntity) = database.withTransaction {

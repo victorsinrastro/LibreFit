@@ -39,6 +39,19 @@ class TrainingToolsTest {
         assertTrue(steps.all { GzclpWeights.fromGrams(it.grams, lb) % 5.0 == 0.0 })
     }
 
+    @Test fun performedVolumeUsesOnlyValidCompletedWorkingSets() {
+        val lb = WeightUnit.LB
+        val sets = listOf(
+            CompletedSet(8, GzclpWeights.toGrams(90.0, lb)),
+            CompletedSet(8, GzclpWeights.toGrams(90.0, lb)),
+            CompletedSet(5, GzclpWeights.toGrams(67.5, lb)),
+            CompletedSet(5, GzclpWeights.toGrams(45.0, lb), isWarmup = true),
+            CompletedSet(0, 0),
+            CompletedSet(8, GzclpWeights.toGrams(100.0, lb), isComplete = false),
+        )
+        assertEquals(1777.5, PerformedVolume.inUnit(sets, lb), 0.0)
+    }
+
     @Test fun deadlineSurvivesClockAdvancePauseAndAdjustment() {
         val timer = RestDeadline(190_000)
         assertEquals(90_000, timer.remaining(100_000))

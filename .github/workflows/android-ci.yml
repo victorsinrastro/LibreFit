@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   android-quality:
-    name: Android lint, tests, and APK
+    name: Android lint and tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -35,10 +35,10 @@ jobs:
             **/*.gradle.kts
             gradle/libs.versions.toml
 
-      - name: Run Android checks and build debug APK
+      - name: Run Android checks
         run: >-
           ./gradlew :app:lintDebug :app:lintRelease
-          :app:testDebugUnitTest :app:assembleDebug
+          :app:testDebugUnitTest
           --no-daemon --max-workers=2
 
       - name: Upload test and lint reports on failure
@@ -51,11 +51,3 @@ jobs:
             app/build/test-results/
           if-no-files-found: ignore
           retention-days: 7
-
-      - name: Upload debug APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: LibreFit-debug.apk
-          path: app/build/outputs/apk/debug/LibreFit-debug.apk
-          if-no-files-found: error

@@ -37,7 +37,7 @@ class TrainingAnalysisExport @Inject constructor(
             database.withTransaction {
                 entry(zip, "manifest.json") { out ->
                     out.write(JSONObject().put("format", "librefit-training-analysis")
-                        .put("schemaVersion", 1).put("databaseVersion", 9)
+                        .put("schemaVersion", 1).put("databaseVersion", 10)
                         .put("exportedAtUtc", Instant.now().toString())
                         .put("notesIncluded", privacy.includeNotes)
                         .put("externalIncluded", privacy.includeExternal)

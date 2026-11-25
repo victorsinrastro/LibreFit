@@ -27,7 +27,7 @@ class TrainingBackup @Inject constructor(
     suspend fun export(uri: Uri) {
         val document = database.withTransaction {
             val body = JSONObject().put("format", "librefit-training-backup")
-                .put("version", 2).put("roomVersion", 9)
+                .put("version", 2).put("roomVersion", 10)
             val data = JSONObject()
             tables.forEach { table ->
                 val rows = JSONArray()
@@ -138,7 +138,8 @@ class TrainingBackup @Inject constructor(
         require(root.optString("format") == "librefit-training-backup" && version in 1..2) {
             "Unsupported backup format"
         }
-        require(root.optInt("roomVersion") in 7..9 && (version != 2 || root.optInt("roomVersion") == 9)) {
+        val roomVersion = root.optInt("roomVersion")
+        require(roomVersion in 7..10 && (version != 2 || roomVersion in 9..10)) {
             "This backup uses an incompatible database version"
         }
         val data = root.getJSONObject("tables")

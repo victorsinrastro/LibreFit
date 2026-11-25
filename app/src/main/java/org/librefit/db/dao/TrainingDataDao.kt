@@ -33,10 +33,10 @@ interface TrainingDataDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertEvent(value: TrainingEventEntity): Long
 
-    @Query("SELECT * FROM training_events WHERE sessionId = :sessionId ORDER BY recordedAtMillis, id")
+    @Query("SELECT * FROM training_events WHERE sessionId = :sessionId ORDER BY recordedAtMillis, rowid")
     suspend fun eventsForSession(sessionId: Long): List<TrainingEventEntity>
 
-    @Query("SELECT * FROM training_events ORDER BY recordedAtMillis, id")
+    @Query("SELECT * FROM training_events ORDER BY recordedAtMillis, rowid")
     suspend fun allEvents(): List<TrainingEventEntity>
 
     @Query("DELETE FROM training_events")

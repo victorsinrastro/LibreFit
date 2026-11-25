@@ -162,11 +162,13 @@ class GzclpRepository @Inject constructor(
         dao.upsertExercise(current.copy(exerciseId = replacementId, exerciseName = replacementName,
             progressionKey = "session:$exerciseId:$replacementId:${current.tier}",
             recommendedGrams = workingGrams, loadMeaning = loadMeaning(replacementId)))
+        val editedAtMillis = System.currentTimeMillis()
         item.sets.forEach {
             val setBefore = ledger.snapshot("gzclp_sets", it.id.toString())
-            dao.upsertSet(it.copy(targetGrams = workingGrams, actualGrams = workingGrams))
+            dao.upsertSet(it.copy(targetGrams = workingGrams, actualGrams = workingGrams,
+                lastEditedAtMillis = editedAtMillis))
             ledger.record("SUBSTITUTED_SET_PRESCRIPTION", "gzclp_sets", it.id.toString(),
-                owner.id, setBefore)
+                owner.id, setBefore, observedAtMillis = editedAtMillis)
         }
         ledger.record("SESSION_SUBSTITUTION", "gzclp_session_exercises", exerciseId.toString(),
             owner.id, before, "Original lift progression is unchanged")
@@ -184,11 +186,13 @@ class GzclpRepository @Inject constructor(
         dao.upsertExercise(item.exercise.copy(exerciseId = template.exerciseId,
             exerciseName = template.exerciseName, progressionKey = template.progressionKey,
             recommendedGrams = original.recommendedGrams, loadMeaning = loadMeaning(template.exerciseId)))
+        val editedAtMillis = System.currentTimeMillis()
         item.sets.forEach {
             val setBefore = ledger.snapshot("gzclp_sets", it.id.toString())
             dao.upsertSet(it.copy(targetGrams = original.recommendedGrams,
-                actualGrams = original.recommendedGrams))
-            ledger.record("SUBSTITUTION_UNDONE_SET", "gzclp_sets", it.id.toString(), owner.id, setBefore)
+                actualGrams = original.recommendedGrams, lastEditedAtMillis = editedAtMillis))
+            ledger.record("SUBSTITUTION_UNDONE_SET", "gzclp_sets", it.id.toString(), owner.id, setBefore,
+                observedAtMillis = editedAtMillis)
         }
         ledger.record("SESSION_SUBSTITUTION_UNDONE", "gzclp_session_exercises", exerciseId.toString(),
             owner.id, before)
@@ -457,7 +461,8 @@ class GzclpRepository @Inject constructor(
             ?: error("Exercise missing")
         val previous = if (value.id == 0L) null else dao.set(value.id)
         require(previous == null || previous.sessionExerciseId == value.sessionExerciseId)
-        val changedWorkingLoad = owner.status == "ACTIVE" && item.exercise.tier == "T1" &&
+        val changedWorkingLoad = owner.status == "ACTIVE" &&
+            (item.exercise.tier == "T1" || item.exercise.tier == "T2") &&
             previous != null && !previous.completed && !value.warmup && value.actualGrams > 0 &&
             previous.actualGrams != value.actualGrams
         val now = System.currentTimeMillis()
